@@ -118,19 +118,14 @@ class TestRunner:
         if kind == "api_response":
             if interceptor is None:
                 return ValidationResult(kind, False, "API interceptor is not available")
-            expected = validation.expected
-            status = None
-            if isinstance(expected, dict) and "status" in expected:
-                status = int(expected["status"])
-                expected = expected.get("value")
             passed, reason, actual = validate_api_response(
                 interceptor.response_snapshot(),
-                url=validation.selector or "",
-                method=validation.prompt or "",
-                status=status,
-                json_path=validation.pattern or "",
-                expected=expected,
-                body_contains=str(validation.expected or "") if not isinstance(validation.expected, dict) else str(expected or "") if False else "",
+                url=validation.api_url or "",
+                method=validation.api_method or "",
+                status=validation.api_status,
+                json_path=validation.json_path or "",
+                expected=validation.expected,
+                body_contains=validation.body_contains or "",
             )
             return ValidationResult(kind, passed, reason, actual=actual)
         if kind == "regex":
