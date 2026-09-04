@@ -83,6 +83,13 @@ class TestRunner:
             engine.open(test.url, self.base_url)
             for step in test.steps:
                 engine.run_step(step)
+
+            # Give Playwright a chance to dispatch any response events that were
+            # triggered by the final UI action before API validations inspect the
+            # interceptor snapshot. This is intentionally tiny; waits in the test
+            # itself should remain the source of truth for application readiness.
+            engine.page.wait_for_timeout(50)
+
             response = engine.response_text()
             for validation in test.validations:
                 validations.append(self._validate(engine.page, validation, response, interceptor))
