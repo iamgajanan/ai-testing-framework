@@ -33,5 +33,8 @@ class JSONParser:
 
     @staticmethod
     def _validation(validation: Dict[str, Any]) -> Dict[str, Any]:
-        allowed = {"type", "prompt", "expected", "selector", "pattern", "expected_columns", "row_condition"}
+        allowed = {
+            "type", "prompt", "expected", "selector", "pattern", "expected_columns",
+            "row_condition", "api_url", "api_method", "api_status", "json_path", "body_contains",
+        }
         return {k: v for k, v in validation.items() if k in allowed}
