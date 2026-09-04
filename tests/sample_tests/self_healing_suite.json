@@ -16,6 +16,11 @@
           "action": "click",
           "selector": "#wrong-submit-selector",
           "description": "the Search button"
+        },
+        {
+          "action": "wait_for_selector",
+          "selector": "#result",
+          "timeout": 5000
         }
       ],
       "validations": [
