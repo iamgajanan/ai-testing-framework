@@ -14,7 +14,6 @@ class XLSXParser:
             from openpyxl import load_workbook
         except ImportError as exc:
             raise RuntimeError("XLSX support requires openpyxl. Install it with: pip install openpyxl") from exc
-
         workbook = load_workbook(Path(path), read_only=True, data_only=True)
         try:
             sheet = workbook.active
@@ -24,6 +23,8 @@ class XLSXParser:
             for values in rows:
                 row = {headers[i]: values[i] if i < len(values) else None for i in range(len(headers)) if headers[i]}
                 self._add_row(tests, row)
+            if not tests:
+                raise ValueError("XLSX suite must contain at least one row with TestID.")
             return TestSuite("XLSX Test Suite", list(tests.values()))
         finally:
             workbook.close()
@@ -40,42 +41,26 @@ class XLSXParser:
         test_id = self._value(row, "TestID", "test_id")
         if not test_id:
             return
-        test = tests.setdefault(
-            test_id,
-            TestCase(
-                test_id,
-                self._value(row, "Name", "TestName", default=test_id),
-                self._value(row, "URL", "Url", default="/"),
-            ),
-        )
+        test = tests.setdefault(test_id, TestCase(test_id, self._value(row, "Name", "TestName", default=test_id), self._value(row, "URL", "Url", default="/")))
         action = self._value(row, "Action")
         if action:
-            test.steps.append(
-                Step(
-                    action=action,
-                    selector=self._value(row, "Selector") or None,
-                    value=self._value(row, "Value") or None,
-                    description=self._value(row, "Description"),
-                    timeout=int(float(self._value(row, "Timeout", default="30000"))),
-                )
-            )
+            test.steps.append(Step(action, self._value(row, "Selector") or None, self._value(row, "Value") or None, self._value(row, "Description"), int(float(self._value(row, "Timeout", default="30000")))))
         expected = self._value(row, "Expected")
-        validation = self._value(row, "Validation", "Prompt")
         validation_type = self._value(row, "ValidationType")
-        if validation or validation_type:
-            test.validations.append(
-                Validation(
-                    type=validation_type or "ai_semantic",
-                    prompt=validation,
-                    expected=expected,
-                    selector=self._value(row, "ValidationSelector") or None,
-                    pattern=self._value(row, "Pattern") or None,
-                    row_condition=self._value(row, "RowCondition") or None,
-                    expected_columns=[c.strip() for c in self._value(row, "ExpectedColumns").split("|") if c.strip()],
-                )
-            )
-        error_checks = self._value(row, "ErrorChecks")
-        for check in error_checks.split("|"):
+        validation = self._value(row, "Validation", "Prompt")
+        if validation or validation_type or self._value(row, "APIUrl", "ApiUrl"):
+            test.validations.append(Validation(
+                type=validation_type or "ai_semantic", prompt=validation, expected=expected,
+                selector=self._value(row, "ValidationSelector") or None, pattern=self._value(row, "Pattern") or None,
+                row_condition=self._value(row, "RowCondition") or None,
+                expected_columns=[c.strip() for c in self._value(row, "ExpectedColumns").split("|") if c.strip()],
+                api_url=self._value(row, "APIUrl", "ApiUrl") or None,
+                api_method=self._value(row, "APIMethod", "ApiMethod") or None,
+                api_status=int(float(self._value(row, "APIStatus", "ApiStatus"))) if self._value(row, "APIStatus", "ApiStatus") else None,
+                json_path=self._value(row, "JSONPath", "JsonPath") or None,
+                body_contains=self._value(row, "BodyContains") or None,
+            ))
+        for check in self._value(row, "ErrorChecks").split("|"):
             check = check.strip()
             if check and check not in test.error_checks:
                 test.error_checks.append(check)
