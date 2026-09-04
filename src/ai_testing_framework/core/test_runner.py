@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from ..automation.network_interceptor import NetworkInterceptor
 from ..automation.playwright_engine import PlaywrightEngine
 from ..core.models import TestCase, TestResult, ValidationResult, TestSuite
 from ..parsers.csv_parser import CSVParser
@@ -16,6 +17,7 @@ from ..parsers.xlsx_parser import XLSXParser
 from ..reporters.html_reporter import write_html_report
 from ..reporters.json_reporter import write_json_report
 from ..validators.ai_validator import AIValidator
+from ..validators.api_validator import validate_api_response
 from ..validators.regex_validator import validate_regex
 from ..validators.table_validator import validate_table
 from ..validators.ui_validator import validate_element_present, validate_text_contains, validate_url_contains
@@ -74,14 +76,17 @@ class TestRunner:
         error = ""
         response = ""
         screenshot = None
+        interceptor = NetworkInterceptor()
+        assert engine.page is not None
+        interceptor.attach(engine.page)
         try:
             engine.open(test.url, self.base_url)
             for step in test.steps:
                 engine.run_step(step)
             response = engine.response_text()
             for validation in test.validations:
-                validations.append(self._validate(engine.page, validation, response))
-            console, api = engine.errors()
+                validations.append(self._validate(engine.page, validation, response, interceptor))
+            console, api = interceptor.snapshot()
             if any(check.lower() == "console_errors" for check in test.error_checks) and console:
                 validations.append(ValidationResult("console_errors", False, f"{len(console)} console error(s)"))
                 error = "Console errors detected"
@@ -95,18 +100,39 @@ class TestRunner:
             status = "PASS" if not failed else "FAIL"
         except Exception as exc:
             error = str(exc)
-            console, api = engine.errors()
-            screenshot = engine.screenshot(str(Path(output_dir) / "screenshots" / f"{test.id}.png"))
+            console, api = interceptor.snapshot()
+            try:
+                screenshot = engine.screenshot(str(Path(output_dir) / "screenshots" / f"{test.id}.png"))
+            except Exception:
+                screenshot = None
             status = "FAIL"
         else:
-            console, api = engine.errors()
+            console, api = interceptor.snapshot()
         return TestResult(test.id, test.name, status, time.perf_counter() - started, response, error, screenshot, validations, console, api)
 
-    def _validate(self, page, validation, response: str) -> ValidationResult:
+    def _validate(self, page, validation, response: str, interceptor: NetworkInterceptor | None = None) -> ValidationResult:
         kind = validation.type.lower()
         if kind == "ai_semantic":
             result = self.ai.validate_response(response, str(validation.expected or ""), validation.prompt)
             return ValidationResult(kind, bool(result.get("pass")), result.get("reason", ""), float(result.get("confidence", 0)))
+        if kind == "api_response":
+            if interceptor is None:
+                return ValidationResult(kind, False, "API interceptor is not available")
+            expected = validation.expected
+            status = None
+            if isinstance(expected, dict) and "status" in expected:
+                status = int(expected["status"])
+                expected = expected.get("value")
+            passed, reason, actual = validate_api_response(
+                interceptor.response_snapshot(),
+                url=validation.selector or "",
+                method=validation.prompt or "",
+                status=status,
+                json_path=validation.pattern or "",
+                expected=expected,
+                body_contains=str(validation.expected or "") if not isinstance(validation.expected, dict) else str(expected or "") if False else "",
+            )
+            return ValidationResult(kind, passed, reason, actual=actual)
         if kind == "regex":
             passed, reason = validate_regex(response, validation.pattern or "")
             return ValidationResult(kind, passed, reason, actual=response)
