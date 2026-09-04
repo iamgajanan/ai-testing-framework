@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+reports/*.html
+reports/*.json
+reports/screenshots/
+.env
+.DS_Store
