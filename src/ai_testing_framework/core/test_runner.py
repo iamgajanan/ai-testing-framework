@@ -169,7 +169,7 @@ class TestRunner:
             if kind == "ui_text" and not validation.selector:
                 passed = str(validation.expected or "").lower() in response.lower()
                 return ValidationResult(kind, passed, f"Expected text: {validation.expected!r}")
-            passed, reason = validate_text_contains(page, selector, str(validation.expected or ""))
+            passed, reason = validate_text_contains(page, selector, str(validation.expected or ""), timeout=validation.timeout)
             return ValidationResult(kind, passed, reason)
         if kind == "url_contains":
             passed, reason = validate_url_contains(page, str(validation.expected or ""))
