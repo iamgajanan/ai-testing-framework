@@ -19,6 +19,14 @@ class AIValidator:
         "confidence (number from 0 to 1)."
     )
 
+    _GENERIC_TERMS = {
+        "a", "an", "the", "and", "or", "is", "are", "be", "this", "that",
+        "response", "result", "page", "text", "content", "should", "mention",
+        "mentions", "mentioning", "relevant", "relevance", "search", "check",
+        "whether", "expected", "condition", "valid", "validates", "validation",
+        "contains", "containing", "include", "includes", "including",
+    }
+
     def __init__(self, provider: str = "openai", model: str = "gpt-4o-mini") -> None:
         self.provider = provider.lower()
         self.model = model
@@ -85,17 +93,46 @@ class AIValidator:
             "confidence": confidence,
         }
 
-    @staticmethod
-    def _heuristic(response: str, expected: str) -> Dict[str, Any]:
+    @classmethod
+    def _heuristic(cls, response: str, expected: str) -> Dict[str, Any]:
+        """Provide a deterministic, conservative fallback when no AI provider is available."""
         actual = response or ""
         exp = expected or ""
         dollar = re.search(r"\$\s*[\d,]+(?:\.\d{2})?", actual)
         if any(word in exp.lower() for word in ("monetary", "dollar amount", "money")):
             passed = bool(dollar) and float(dollar.group(0).replace("$", "").replace(",", "")) > 0
-            return {"pass": passed, "reason": "Found a positive monetary value" if passed else "No positive monetary value found", "confidence": 0.82}
+            return {
+                "pass": passed,
+                "reason": "Found a positive monetary value" if passed else "No positive monetary value found",
+                "confidence": 0.82,
+            }
         if not exp:
-            return {"pass": bool(actual.strip()), "reason": "Response is non-empty" if actual.strip() else "Response is empty", "confidence": 0.60}
-        key_terms = re.findall(r"[A-Za-z0-9@.$-]{3,}", exp.lower())
-        hits = sum(1 for term in key_terms if term in actual.lower())
-        passed = hits >= max(1, min(2, len(key_terms)))
-        return {"pass": passed, "reason": f"Matched {hits}/{len(key_terms)} expected terms", "confidence": 0.65 if passed else 0.40}
+            return {
+                "pass": bool(actual.strip()),
+                "reason": "Response is non-empty" if actual.strip() else "Response is empty",
+                "confidence": 0.60,
+            }
+
+        # Ignore generic test-language words and match the meaningful terms in
+        # the expected condition. This makes phrases such as "A response
+        # mentioning OpenAI" evaluate against the meaningful term "OpenAI".
+        terms = [
+            term for term in re.findall(r"[A-Za-z0-9@.$-]{3,}", exp.lower())
+            if term not in cls._GENERIC_TERMS
+        ]
+        if not terms:
+            return {
+                "pass": bool(actual.strip()),
+                "reason": "Expected condition has no specific terms; response is non-empty" if actual.strip() else "Response is empty",
+                "confidence": 0.60,
+            }
+
+        actual_lower = actual.lower()
+        hits = sum(1 for term in terms if term in actual_lower)
+        required = max(1, (len(terms) + 1) // 2)
+        passed = hits >= required
+        return {
+            "pass": passed,
+            "reason": f"Matched {hits}/{len(terms)} meaningful expected terms",
+            "confidence": 0.70 if passed else 0.40,
+        }
