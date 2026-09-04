@@ -6,23 +6,18 @@ from typing import Any
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 
 from .element_locator import AIElementLocator
+from .self_healing import SelfHealing
 
 
 class PlaywrightEngine:
     """Thin synchronous Playwright adapter used by the test runner."""
 
-    def __init__(
-        self,
-        browser_name: str = "chromium",
-        headless: bool = True,
-        timeout: int = 30000,
-        ai_provider: str = "openai",
-        ai_model: str = "gpt-4o-mini",
-    ) -> None:
+    def __init__(self, browser_name: str = "chromium", headless: bool = True, timeout: int = 30000, ai_provider: str = "openai", ai_model: str = "gpt-4o-mini", self_healing: bool = True, healing_confidence: float = 0.70) -> None:
         self.browser_name = browser_name
         self.headless = headless
         self.timeout = timeout
         self.ai_locator = AIElementLocator(ai_provider, ai_model)
+        self.self_healing = SelfHealing(ai_provider, ai_model, healing_confidence) if self_healing else None
         self.playwright: Playwright | None = None
         self.browser: Browser | None = None
         self.context: BrowserContext | None = None
@@ -30,6 +25,7 @@ class PlaywrightEngine:
         self.console_errors: list[str] = []
         self.api_errors: list[str] = []
         self.downloads: list[str] = []
+        self.healed_selectors: list[dict[str, Any]] = []
 
     def start(self) -> None:
         self.playwright = sync_playwright().start()
@@ -65,7 +61,18 @@ class PlaywrightEngine:
     def _resolve_locator(self, selector: str | None, description: str = ""):
         assert self.page is not None
         if selector:
-            return self.page.locator(selector)
+            locator = self.page.locator(selector)
+            try:
+                if locator.count() > 0:
+                    return locator
+            except Exception:
+                pass
+            if self.self_healing:
+                healed = self.self_healing.heal_selector(self.page, selector, description)
+                if healed:
+                    self.healed_selectors.append({"failed_selector": selector, "healed_selector": healed, "reason": self.self_healing.last_reason, "confidence": self.self_healing.last_confidence})
+                    return self.page.locator(healed)
+            return locator
         if description:
             return self.ai_locator.find_element(self.page, description)
         raise ValueError("Step requires either 'selector' or 'description'")
@@ -77,7 +84,7 @@ class PlaywrightEngine:
         description = getattr(step, "description", "")
         value = "" if step.value is None else str(step.value)
         timeout = getattr(step, "timeout", self.timeout)
-        locator = None if action in {"wait_for_load_state"} else self._resolve_locator(selector, description)
+        locator = None if action == "wait_for_load_state" else self._resolve_locator(selector, description)
 
         if action in {"type", "fill"}:
             locator.fill(value, timeout=timeout)
