@@ -22,6 +22,11 @@ class Validation:
     pattern: Optional[str] = None
     expected_columns: List[str] = field(default_factory=list)
     row_condition: Optional[str] = None
+    api_url: Optional[str] = None
+    api_method: Optional[str] = None
+    api_status: Optional[int] = None
+    json_path: Optional[str] = None
+    body_contains: Optional[str] = None
 
 
 @dataclass
