@@ -25,7 +25,14 @@ class TestRunner:
     def __init__(self, config: str | dict | None = None, base_url: str = "") -> None:
         self.config = load_config(config) if isinstance(config, str) or config is None else config
         self.base_url = base_url
+        self._build_ai_validator()
+
+    def _build_ai_validator(self) -> None:
         self.ai = AIValidator(self.config["ai"]["provider"], self.config["ai"]["model"])
+
+    def set_ai_provider(self, provider: str) -> None:
+        self.config["ai"]["provider"] = provider
+        self._build_ai_validator()
 
     def load_suite(self, test_file: str) -> TestSuite:
         suffix = Path(test_file).suffix.lower()
