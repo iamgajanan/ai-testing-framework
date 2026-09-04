@@ -1,21 +1,22 @@
 # Universal AI Testing Framework
 
-Phase 1 MVP of a generic AI-powered web testing framework built with Python, Playwright, Pytest, and OpenAI.
+Phase 2 of a generic AI-powered web testing framework built with Python, Playwright, Pytest, and OpenAI.
 
-## MVP
+## Current capabilities
 
-- Markdown and JSON test-suite parsers
+- Markdown, JSON, CSV, and XLSX test-suite parsers
+- Data-driven tabular test definitions (multiple rows can build one test case)
 - Playwright browser automation
 - Selector-based actions: click, type, fill, select, upload, wait
 - AI semantic response validation using OpenAI
-- Deterministic validators: regex, element presence, text contains, URL contains
+- Deterministic validators: regex, element presence, text contains, URL contains, table validation
 - HTML and JSON reports with screenshots on failure
 - Console and API error capture
 - CLI runner
 
 ## Requirements
 
-- Python 3.9+
+- Python 3.10+
 - Playwright browsers
 - Optional `OPENAI_API_KEY` for AI validation
 
@@ -45,7 +46,32 @@ To run the Markdown suite:
 ai-test --file tests/sample_tests/test_suite.md --browser chromium --base-url http://127.0.0.1:8000
 ```
 
-To use OpenAI semantic validation:
+### CSV and XLSX
+
+Tabular suites use one row per action or validation. Rows sharing the same `TestID` are grouped into one test case. Supported columns include:
+
+`TestID`, `Name`, `URL`, `Action`, `Selector`, `Value`, `Timeout`, `Expected`, `ValidationType`, `Validation`, `ValidationSelector`, `Pattern`, `ExpectedColumns`, `RowCondition`, `ErrorChecks`.
+
+Use `|` to separate multiple values in `ExpectedColumns` and `ErrorChecks`.
+
+CSV example:
+
+```csv
+TestID,Name,URL,Action,Selector,Value,Expected,ValidationType,Validation,ErrorChecks
+TC-CSV-001,CSV Search,/,type,#query,OpenAI,,,,
+TC-CSV-001,CSV Search,/,click,#submit,,,,
+TC-CSV-001,CSV Search,/,wait,#result,5000,,,,
+TC-CSV-001,CSV Search,,,,,OpenAI,text_contains,,
+```
+
+Run either format directly:
+
+```bash
+ai-test --file tests/test_data/sample_suite.csv --browser chromium --base-url http://127.0.0.1:8000 --ai-provider none
+ai-test --file path/to/suite.xlsx --browser chromium --base-url http://127.0.0.1:8000 --ai-provider none
+```
+
+## OpenAI semantic validation
 
 ```bash
 export OPENAI_API_KEY="your-api-key"
@@ -53,6 +79,16 @@ ai-test --file tests/sample_tests/test_suite.json --ai-provider openai
 ```
 
 Without an API key, `ai_semantic` validation uses a local heuristic fallback so the framework remains runnable offline.
+
+## CLI
+
+```text
+ai-test --help
+ai-test --file tests/sample_tests/test_suite.md
+ai-test --file tests/sample_tests/test_suite.json --output reports
+ai-test --file tests/sample_tests/test_suite.json --test TC-001
+ai-test --file tests/test_data/sample_suite.csv --ai-provider none
+```
 
 ## Project structure
 
@@ -62,6 +98,10 @@ ai-testing-framework/
 │   ├── automation/
 │   ├── core/
 │   ├── parsers/
+│   │   ├── csv_parser.py
+│   │   ├── json_parser.py
+│   │   ├── md_parser.py
+│   │   └── xlsx_parser.py
 │   ├── reporters/
 │   └── validators/
 ├── tests/
@@ -74,47 +114,8 @@ ai-testing-framework/
 └── setup.py
 ```
 
-## Test formats
+## Roadmap
 
-### JSON
-
-```json
-{
-  "test_suite": "Demo",
-  "tests": [
-    {
-      "id": "TC-001",
-      "name": "Search",
-      "url": "/",
-      "steps": [
-        {"action": "type", "selector": "#query", "value": "OpenAI"},
-        {"action": "click", "selector": "#submit"},
-        {"action": "wait", "selector": "#result", "timeout": 5000}
-      ],
-      "validations": [
-        {"type": "text_contains", "selector": "#result", "expected": "OpenAI"},
-        {"type": "ai_semantic", "prompt": "Check whether the result is a relevant search result for OpenAI", "expected": "A result about OpenAI"}
-      ]
-    }
-  ]
-}
-```
-
-### Markdown
-
-Use the format shown in `tests/sample_tests/test_suite.md`. The parser recognizes suite/test headings, URL, numbered steps, Expected, AI Validation, Fallback Check, Validation, and UI Check lines.
-
-## CLI
-
-```text
-ai-test --help
-ai-test --file tests/sample_tests/test_suite.md
-ai-test --file tests/sample_tests/test_suite.json --report html --output reports
-ai-test --file tests/sample_tests/test_suite.json --test TC-001
-```
-
-## Notes
-
-This is the Phase 1 MVP. Self-healing selectors, CSV/XLSX parsing, API interception assertions, PDF reports, cross-browser matrices, and advanced concurrency are intentionally reserved for later phases.
+Next: richer Playwright actions, API/network assertions, cross-browser matrices, trace/video artifacts, and self-healing selectors.
 
 License: MIT
