@@ -27,6 +27,7 @@ class Validation:
     api_status: Optional[int] = None
     json_path: Optional[str] = None
     body_contains: Optional[str] = None
+    timeout: int = 5000
 
 
 @dataclass
