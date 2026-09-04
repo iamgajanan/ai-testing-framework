@@ -56,7 +56,13 @@ class TestRunner:
             raise ValueError(f"No matching test found for id={test_id}")
         browser_name = browser or self.config.get("browser", "chromium")
         results: list[TestResult] = []
-        engine = PlaywrightEngine(browser_name, self.config.get("headless", True), self.config.get("timeout", 30000))
+        engine = PlaywrightEngine(
+            browser_name,
+            self.config.get("headless", True),
+            self.config.get("timeout", 30000),
+            self.config["ai"]["provider"],
+            self.config["ai"]["model"],
+        )
         engine.start()
         try:
             for test in selected:
@@ -84,9 +90,6 @@ class TestRunner:
             for step in test.steps:
                 engine.run_step(step)
 
-            # API/fetch callbacks can be dispatched just after the final UI step.
-            # Poll briefly for the expected response instead of relying on a
-            # fixed sleep, while keeping the test's own UI waits authoritative.
             api_validations = [v for v in test.validations if v.type.lower() == "api_response"]
             if api_validations:
                 deadline = time.monotonic() + 2.0
