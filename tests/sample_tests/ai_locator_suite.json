@@ -1,0 +1,36 @@
+{
+  "test_suite": "AI Element Locator Demo",
+  "tests": [
+    {
+      "id": "LOC-001",
+      "name": "Locate search controls by description",
+      "url": "/",
+      "steps": [
+        {
+          "action": "type",
+          "description": "the search input",
+          "value": "OpenAI"
+        },
+        {
+          "action": "click",
+          "description": "the Search button"
+        }
+      ],
+      "validations": [
+        {
+          "type": "text_contains",
+          "selector": "#result",
+          "expected": "OpenAI"
+        },
+        {
+          "type": "api_response",
+          "api_url": "/api/search",
+          "api_method": "GET",
+          "api_status": 200,
+          "json_path": "success",
+          "expected": true
+        }
+      ]
+    }
+  ]
+}
