@@ -1,0 +1,13 @@
+browser: chromium
+headless: true
+timeout: 30000
+ai:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+report:
+  output_dir: reports
+  html: true
+  json: true
+screenshots:
+  on_failure: true
