@@ -9,30 +9,81 @@ from openai import OpenAI
 
 
 class AIValidator:
+    """Semantic test oracle with OpenAI and deterministic fallback support."""
+
+    SYSTEM_PROMPT = (
+        "You are a strict software-test oracle. Decide whether the actual web "
+        "response satisfies the expected condition. Treat the expected condition "
+        "as the acceptance criterion, not as a request to perform an action. "
+        "Return only JSON with: pass (boolean), reason (short string), and "
+        "confidence (number from 0 to 1)."
+    )
+
     def __init__(self, provider: str = "openai", model: str = "gpt-4o-mini") -> None:
-        self.provider = provider
+        self.provider = provider.lower()
         self.model = model
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if provider == "openai" and os.getenv("OPENAI_API_KEY") else None
+        api_key = os.getenv("OPENAI_API_KEY")
+        self.client = OpenAI(api_key=api_key) if self.provider == "openai" and api_key else None
 
     def validate_response(self, response: str, expected: str, context: str = "") -> Dict[str, Any]:
-        if not self.client:
+        if self.provider == "none" or self.client is None:
             return self._heuristic(response, expected)
-        result = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0,
-            response_format={"type": "json_object"},
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a strict software-test oracle. Decide whether the actual response satisfies the expected condition. Return JSON with pass:boolean, reason:string, confidence:number from 0 to 1.",
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps({"actual": response, "expected": expected, "context": context}, ensure_ascii=False),
-                },
-            ],
-        )
-        return json.loads(result.choices[0].message.content or "{}")
+
+        try:
+            result = self.client.chat.completions.create(
+                model=self.model,
+                temperature=0,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": self.SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "actual_response": response or "",
+                                "expected_condition": expected or "",
+                                "validation_instruction": context or "",
+                            },
+                            ensure_ascii=False,
+                        ),
+                    },
+                ],
+            )
+            content = result.choices[0].message.content or "{}"
+            return self._normalize_result(json.loads(self._extract_json(content)))
+        except Exception as exc:
+            return {
+                "pass": False,
+                "reason": f"AI validation failed: {exc}",
+                "confidence": 0.0,
+            }
+
+    @staticmethod
+    def _extract_json(content: str) -> str:
+        """Accept normal JSON as well as JSON wrapped in a markdown code fence."""
+        text = content.strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.I)
+            text = re.sub(r"\s*```$", "", text)
+        return text.strip()
+
+    @staticmethod
+    def _normalize_result(result: Dict[str, Any]) -> Dict[str, Any]:
+        passed = result.get("pass", result.get("passed", False))
+        if isinstance(passed, str):
+            passed = passed.strip().lower() in {"true", "yes", "pass", "passed"}
+
+        confidence = result.get("confidence", 0.0)
+        try:
+            confidence = max(0.0, min(1.0, float(confidence)))
+        except (TypeError, ValueError):
+            confidence = 0.0
+
+        return {
+            "pass": bool(passed),
+            "reason": str(result.get("reason", "No explanation returned by AI.")),
+            "confidence": confidence,
+        }
 
     @staticmethod
     def _heuristic(response: str, expected: str) -> Dict[str, Any]:
