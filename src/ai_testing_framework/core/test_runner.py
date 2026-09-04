@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# This module is framework code, not a pytest test module.  Its filename is
+# intentionally kept as test_runner.py, so explicitly opt it out of discovery.
+__test__ = False
+
 import time
 from pathlib import Path
 from typing import Optional
