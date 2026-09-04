@@ -1,0 +1,32 @@
+{
+  "test_suite": "AI Testing Framework Demo",
+  "tests": [
+    {
+      "id": "TC-001",
+      "name": "Search result validation",
+      "url": "/",
+      "steps": [
+        {"action": "type", "selector": "#query", "value": "OpenAI", "description": "Enter search query"},
+        {"action": "click", "selector": "#submit", "description": "Click search button"},
+        {"action": "wait", "selector": "#result", "timeout": 5000, "description": "Wait for result"}
+      ],
+      "validations": [
+        {"type": "element_present", "selector": "#result"},
+        {"type": "text_contains", "selector": "#result", "expected": "OpenAI"},
+        {"type": "ai_semantic", "prompt": "Check whether this is a relevant search result for OpenAI", "expected": "A search result mentioning OpenAI"}
+      ],
+      "error_checks": ["console_errors", "api_errors"]
+    },
+    {
+      "id": "TC-002",
+      "name": "Table validation",
+      "url": "/table",
+      "steps": [
+        {"action": "wait", "selector": "table", "timeout": 5000}
+      ],
+      "validations": [
+        {"type": "table_validation", "selector": "table", "expected_columns": ["First Name", "Last Name", "Country"], "row_condition": "Country should equal 'India'"}
+      ]
+    }
+  ]
+}
