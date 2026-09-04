@@ -8,7 +8,8 @@ from ..core.models import Step, TestCase, TestSuite, Validation
 
 class MarkdownParser:
     _step_re = re.compile(r"^\s*\d+\.\s+(.*)$")
-    _test_re = re.compile(r"^##\s+Test:\s*([^\s-]+)\s*-\s*(.+)$", re.I)
+    # Test IDs may contain hyphens, e.g. "TC-001".
+    _test_re = re.compile(r"^##\s+Test:\s*([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\s*-\s*(.+)$", re.I)
 
     def parse(self, path: str | Path) -> TestSuite:
         lines = Path(path).read_text(encoding="utf-8").splitlines()
