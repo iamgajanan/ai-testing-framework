@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-# This module is framework code, not a pytest test module.  Its filename is
-# intentionally kept as test_runner.py, so explicitly opt it out of discovery.
+# This module is framework code, not a pytest test module.
 __test__ = False
 
 import time
@@ -10,8 +9,10 @@ from typing import Optional
 
 from ..automation.playwright_engine import PlaywrightEngine
 from ..core.models import TestCase, TestResult, ValidationResult, TestSuite
+from ..parsers.csv_parser import CSVParser
 from ..parsers.json_parser import JSONParser
 from ..parsers.md_parser import MarkdownParser
+from ..parsers.xlsx_parser import XLSXParser
 from ..reporters.html_reporter import write_html_report
 from ..reporters.json_reporter import write_json_report
 from ..validators.ai_validator import AIValidator
@@ -40,7 +41,11 @@ class TestRunner:
             return JSONParser().parse(test_file)
         if suffix in {".md", ".markdown"}:
             return MarkdownParser().parse(test_file)
-        raise ValueError(f"Phase 1 supports .md/.markdown and .json test suites, not {suffix}")
+        if suffix == ".csv":
+            return CSVParser().parse(test_file)
+        if suffix in {".xlsx", ".xlsm"}:
+            return XLSXParser().parse(test_file)
+        raise ValueError(f"Unsupported test suite format: {suffix}. Use .md, .json, .csv, .xlsx, or .xlsm")
 
     def run(self, test_file: str, browser: Optional[str] = None, test_id: Optional[str] = None, output_dir: Optional[str] = None) -> list[TestResult]:
         suite = self.load_suite(test_file)
@@ -76,18 +81,18 @@ class TestRunner:
             response = engine.response_text()
             for validation in test.validations:
                 validations.append(self._validate(engine.page, validation, response))
-            failed = [v for v in validations if not v.passed]
-            if failed:
-                error = "; ".join(v.reason for v in failed)
-                screenshot = engine.screenshot(str(Path(output_dir) / "screenshots" / f"{test.id}.png"))
             console, api = engine.errors()
             if any(check.lower() == "console_errors" for check in test.error_checks) and console:
                 validations.append(ValidationResult("console_errors", False, f"{len(console)} console error(s)"))
-                error = error or "Console errors detected"
+                error = "Console errors detected"
             if any(check.lower() == "api_errors" for check in test.error_checks) and api:
                 validations.append(ValidationResult("api_errors", False, f"{len(api)} network error(s)"))
                 error = error or "API/network errors detected"
-            status = "PASS" if not any(not v.passed for v in validations) else "FAIL"
+            failed = [v for v in validations if not v.passed]
+            if failed:
+                error = error or "; ".join(v.reason for v in failed)
+                screenshot = engine.screenshot(str(Path(output_dir) / "screenshots" / f"{test.id}.png"))
+            status = "PASS" if not failed else "FAIL"
         except Exception as exc:
             error = str(exc)
             console, api = engine.errors()
