@@ -1,5 +1,5 @@
 TestID,Name,URL,Action,Selector,Value,Expected,ValidationType,Validation,ErrorChecks
-TC-CSV-001,CSV Search,/,type,#query,OpenAI,,,
+TC-CSV-001,CSV Search,/,type,#query,OpenAI,,,,
 TC-CSV-001,CSV Search,/,click,#submit,,,,
-TC-CSV-001,CSV Search,/,wait,#result,,,text_contains,,
+TC-CSV-001,CSV Search,/,wait,#result,5000,,,,
 TC-CSV-001,CSV Search,,,,,OpenAI,text_contains,,
