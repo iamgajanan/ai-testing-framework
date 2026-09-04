@@ -38,18 +38,15 @@ class NetworkInterceptor:
             self.console_errors.append(message.text)
 
     def _response(self, response: Response) -> None:
-        # Never read response bodies from inside the response event handler.
-        # response.text() is synchronous and can block the page event loop,
-        # preventing fetch/XHR callbacks from completing. Store the response
-        # and capture its body later from response_snapshot().
+        # The response event handler must remain completely non-blocking.
+        # Do not access headers/body here: Playwright may need to dispatch
+        # this event before the page's fetch/XHR continuation can run.
         try:
-            content_type = response.headers.get("content-type", "")
             item = NetworkResponse(
                 url=response.url,
                 method=response.request.method,
                 status=response.status,
                 status_text=response.status_text,
-                content_type=content_type,
             )
             self.responses.append(item)
             self._response_objects.append(response)
@@ -71,26 +68,25 @@ class NetworkInterceptor:
             if index >= len(self.responses):
                 break
             item = self.responses[index]
-            if item.body or item.json is not None:
-                continue
             try:
-                content_type = item.content_type.lower()
+                content_type = response.headers.get("content-type", "")
+                item.content_type = content_type
                 readable = any(
-                    kind in content_type
+                    kind in content_type.lower()
                     for kind in ("json", "text/", "javascript", "xml", "form-urlencoded")
                 )
                 if not readable:
                     continue
                 body = response.text()
                 item.body = body
-                if "json" in content_type and body:
+                if "json" in content_type.lower() and body:
                     try:
                         item.json = json.loads(body)
                     except (ValueError, TypeError):
                         pass
             except Exception:
-                # Body capture is best-effort; the response metadata remains
-                # available for status/URL/method assertions.
+                # Metadata remains valid even if the browser has already
+                # released the response body.
                 continue
         return [response.to_dict() for response in self.responses]
 
