@@ -38,24 +38,11 @@ class NetworkInterceptor:
             self.console_errors.append(message.text)
 
     def _response(self, response: Response) -> None:
-        # The response event handler must remain completely non-blocking.
-        # Do not access headers/body here: Playwright may need to dispatch
-        # this event before the page's fetch/XHR continuation can run.
-        try:
-            item = NetworkResponse(
-                url=response.url,
-                method=response.request.method,
-                status=response.status,
-                status_text=response.status_text,
-            )
-            self.responses.append(item)
-            self._response_objects.append(response)
-            if response.status >= 400:
-                self.api_errors.append(
-                    f"{response.status} {response.request.method} {response.url}"
-                )
-        except Exception:
-            pass
+        # Never read Playwright protocol properties from a response callback.
+        # In the sync API, doing so can block the browser event loop while the
+        # page is waiting for the same response to resume its fetch/XHR code.
+        # Keep only the object reference and inspect it later from the runner.
+        self._response_objects.append(response)
 
     def _request_failed(self, request) -> None:
         self.api_errors.append(f"FAILED {request.method} {request.url}: {request.failure}")
@@ -64,30 +51,42 @@ class NetworkInterceptor:
         return list(self.console_errors), list(self.api_errors)
 
     def response_snapshot(self) -> List[dict[str, Any]]:
-        for index, response in enumerate(self._response_objects):
-            if index >= len(self.responses):
-                break
-            item = self.responses[index]
+        # Build metadata lazily, outside the response event callback.
+        self.responses = []
+        for response in self._response_objects:
             try:
+                item = NetworkResponse(
+                    url=response.url,
+                    method=response.request.method,
+                    status=response.status,
+                    status_text=response.status_text,
+                )
                 content_type = response.headers.get("content-type", "")
                 item.content_type = content_type
+
                 readable = any(
                     kind in content_type.lower()
                     for kind in ("json", "text/", "javascript", "xml", "form-urlencoded")
                 )
-                if not readable:
-                    continue
-                body = response.text()
-                item.body = body
-                if "json" in content_type.lower() and body:
-                    try:
-                        item.json = json.loads(body)
-                    except (ValueError, TypeError):
-                        pass
+                if readable:
+                    body = response.text()
+                    item.body = body
+                    if "json" in content_type.lower() and body:
+                        try:
+                            item.json = json.loads(body)
+                        except (ValueError, TypeError):
+                            pass
+
+                if item.status >= 400:
+                    error = f"{item.status} {item.method} {item.url}"
+                    if error not in self.api_errors:
+                        self.api_errors.append(error)
+
+                self.responses.append(item)
             except Exception:
-                # Metadata remains valid even if the browser has already
-                # released the response body.
+                # Ignore responses whose metadata/body is no longer available.
                 continue
+
         return [response.to_dict() for response in self.responses]
 
     def reset(self) -> None:
