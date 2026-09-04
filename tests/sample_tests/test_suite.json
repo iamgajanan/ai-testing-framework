@@ -13,7 +13,9 @@
       "validations": [
         {"type": "element_present", "selector": "#result"},
         {"type": "text_contains", "selector": "#result", "expected": "OpenAI"},
-        {"type": "ai_semantic", "prompt": "Check whether this is a relevant search result for OpenAI", "expected": "A search result mentioning OpenAI"}
+        {"type": "ai_semantic", "prompt": "Check whether this is a relevant search result for OpenAI", "expected": "A search result mentioning OpenAI"},
+        {"type": "api_response", "api_url": "/api/search", "api_method": "GET", "api_status": 200, "json_path": "success", "expected": true},
+        {"type": "api_response", "api_url": "/api/search", "api_method": "GET", "json_path": "results.0", "expected": "OpenAI is an AI research and deployment company."}
       ],
       "error_checks": ["console_errors", "api_errors"]
     },
