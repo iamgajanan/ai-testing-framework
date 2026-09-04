@@ -5,14 +5,24 @@ from typing import Any
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 
+from .element_locator import AIElementLocator
+
 
 class PlaywrightEngine:
     """Thin synchronous Playwright adapter used by the test runner."""
 
-    def __init__(self, browser_name: str = "chromium", headless: bool = True, timeout: int = 30000) -> None:
+    def __init__(
+        self,
+        browser_name: str = "chromium",
+        headless: bool = True,
+        timeout: int = 30000,
+        ai_provider: str = "openai",
+        ai_model: str = "gpt-4o-mini",
+    ) -> None:
         self.browser_name = browser_name
         self.headless = headless
         self.timeout = timeout
+        self.ai_locator = AIElementLocator(ai_provider, ai_model)
         self.playwright: Playwright | None = None
         self.browser: Browser | None = None
         self.context: BrowserContext | None = None
@@ -52,40 +62,50 @@ class PlaywrightEngine:
         target = f"{base_url.rstrip('/')}/{url.lstrip('/')}" if base_url and url.startswith("/") else url
         self.page.goto(target, wait_until="domcontentloaded")
 
+    def _resolve_locator(self, selector: str | None, description: str = ""):
+        assert self.page is not None
+        if selector:
+            return self.page.locator(selector)
+        if description:
+            return self.ai_locator.find_element(self.page, description)
+        raise ValueError("Step requires either 'selector' or 'description'")
+
     def run_step(self, step: Any) -> Any:
         assert self.page is not None
         action = step.action.lower().strip()
         selector = step.selector
+        description = getattr(step, "description", "")
         value = "" if step.value is None else str(step.value)
         timeout = getattr(step, "timeout", self.timeout)
+        locator = None if action in {"wait_for_load_state"} else self._resolve_locator(selector, description)
 
         if action in {"type", "fill"}:
-            self.page.locator(selector).fill(value, timeout=timeout)
+            locator.fill(value, timeout=timeout)
         elif action == "click":
-            self.page.locator(selector).click(timeout=timeout)
+            locator.click(timeout=timeout)
         elif action in {"check", "checkbox"}:
-            self.page.locator(selector).check(timeout=timeout)
+            locator.check(timeout=timeout)
         elif action == "uncheck":
-            self.page.locator(selector).uncheck(timeout=timeout)
+            locator.uncheck(timeout=timeout)
         elif action in {"select", "select_option"}:
-            self.page.locator(selector).select_option(value, timeout=timeout)
+            locator.select_option(value, timeout=timeout)
         elif action == "hover":
-            self.page.locator(selector).hover(timeout=timeout)
+            locator.hover(timeout=timeout)
         elif action in {"press", "keyboard"}:
-            self.page.locator(selector).press(value, timeout=timeout) if selector else self.page.keyboard.press(value)
+            locator.press(value, timeout=timeout) if selector or description else self.page.keyboard.press(value)
         elif action in {"upload", "set_input_files"}:
-            self.page.locator(selector).set_input_files(value, timeout=timeout)
+            locator.set_input_files(value, timeout=timeout)
         elif action in {"wait", "wait_for_selector"}:
-            self.page.locator(selector).wait_for(state="visible", timeout=timeout)
+            locator.wait_for(state="visible", timeout=timeout)
         elif action in {"wait_for_response", "response"}:
             with self.page.expect_response(value, timeout=timeout) as response_info:
-                if selector:
-                    self.page.locator(selector).click(timeout=timeout)
+                if selector or description:
+                    locator.click(timeout=timeout)
             return response_info.value
         elif action == "download":
             with self.page.expect_download(timeout=timeout) as download_info:
-                if selector:
-                    self.page.locator(selector).click(timeout=timeout)
+                if selector or description:
+                    locator.click(timeout=timeout)
             download = download_info.value
             path = Path("reports") / "downloads" / download.suggested_filename
             path.parent.mkdir(parents=True, exist_ok=True)
