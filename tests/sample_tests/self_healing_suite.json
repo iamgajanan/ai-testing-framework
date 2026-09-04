@@ -1,0 +1,30 @@
+{
+  "test_suite": "Self Healing Demo",
+  "tests": [
+    {
+      "id": "HEAL-001",
+      "name": "Recover broken search selector",
+      "url": "/",
+      "steps": [
+        {
+          "action": "type",
+          "selector": "#wrong-query-selector",
+          "description": "the search input",
+          "value": "OpenAI"
+        },
+        {
+          "action": "click",
+          "selector": "#wrong-submit-selector",
+          "description": "the Search button"
+        }
+      ],
+      "validations": [
+        {
+          "type": "text_contains",
+          "selector": "#result",
+          "expected": "OpenAI"
+        }
+      ]
+    }
+  ]
+}
