@@ -1,3 +1,4 @@
+import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 SEARCH_HTML = '''<!doctype html>
@@ -9,9 +10,11 @@ SEARCH_HTML = '''<!doctype html>
 </form>
 <div id="result" class="result-container"></div>
 <script>
-function search(){
+async function search(){
   const q=document.getElementById('query').value;
-  document.getElementById('result').textContent='Search result: OpenAI is an AI research and deployment company. Query: '+q;
+  const response = await fetch('/api/search?q=' + encodeURIComponent(q));
+  const data = await response.json();
+  document.getElementById('result').textContent='Search result: '+data.results[0]+' Query: '+q;
   return false;
 }
 </script>
@@ -32,11 +35,24 @@ TABLE_HTML = '''<!doctype html>
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        html = TABLE_HTML if self.path.split('?', 1)[0] == '/table' else SEARCH_HTML
+        path, _, query = self.path.partition('?')
+        if path == '/api/search':
+            params = dict(item.split('=', 1) for item in query.split('&') if '=' in item)
+            result = {'success': True, 'results': ['OpenAI is an AI research and deployment company.'], 'query': params.get('q', '')}
+            payload = json.dumps(result).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+        html = TABLE_HTML if path == '/table' else SEARCH_HTML
+        payload = html.encode()
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(payload)))
         self.end_headers()
-        self.wfile.write(html.encode())
+        self.wfile.write(payload)
 
     def log_message(self, *_):
         pass
