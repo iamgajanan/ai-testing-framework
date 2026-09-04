@@ -1,22 +1,31 @@
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs
 
 SEARCH_HTML = '''<!doctype html>
 <html><body>
 <h1>AI Testing Demo</h1>
-<form onsubmit="return search()">
+<form id="search-form">
   <input id="query" placeholder="Search">
-  <button id="submit">Search</button>
+  <button id="submit" type="submit">Search</button>
 </form>
 <div id="result" class="result-container"></div>
 <script>
-async function search(){
-  const q=document.getElementById('query').value;
-  const response = await fetch('/api/search?q=' + encodeURIComponent(q));
-  const data = await response.json();
-  document.getElementById('result').textContent='Search result: '+data.results[0]+' Query: '+q;
-  return false;
-}
+document.getElementById('search-form').addEventListener('submit', async function(event) {
+  event.preventDefault();
+  const q = document.getElementById('query').value;
+  const result = document.getElementById('result');
+  try {
+    const response = await fetch('/api/search?q=' + encodeURIComponent(q));
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const data = await response.json();
+    result.textContent = 'Search result: ' + data.results[0] + ' Query: ' + q;
+    result.classList.add('visible');
+  } catch (error) {
+    result.textContent = 'Search failed: ' + error.message;
+    result.classList.add('visible');
+  }
+});
 </script>
 </body></html>'''
 
@@ -37,8 +46,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path, _, query = self.path.partition('?')
         if path == '/api/search':
-            params = dict(item.split('=', 1) for item in query.split('&') if '=' in item)
-            result = {'success': True, 'results': ['OpenAI is an AI research and deployment company.'], 'query': params.get('q', '')}
+            params = parse_qs(query)
+            result = {
+                'success': True,
+                'results': ['OpenAI is an AI research and deployment company.'],
+                'query': params.get('q', [''])[0],
+            }
             payload = json.dumps(result).encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
