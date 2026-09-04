@@ -84,11 +84,17 @@ class TestRunner:
             for step in test.steps:
                 engine.run_step(step)
 
-            # Give Playwright a chance to dispatch any response events that were
-            # triggered by the final UI action before API validations inspect the
-            # interceptor snapshot. This is intentionally tiny; waits in the test
-            # itself should remain the source of truth for application readiness.
-            engine.page.wait_for_timeout(50)
+            # API/fetch callbacks can be dispatched just after the final UI step.
+            # Poll briefly for the expected response instead of relying on a
+            # fixed sleep, while keeping the test's own UI waits authoritative.
+            api_validations = [v for v in test.validations if v.type.lower() == "api_response"]
+            if api_validations:
+                deadline = time.monotonic() + 2.0
+                while time.monotonic() < deadline:
+                    snapshot = interceptor.response_snapshot()
+                    if all(self._has_api_candidate(snapshot, v) for v in api_validations):
+                        break
+                    engine.page.wait_for_timeout(50)
 
             response = engine.response_text()
             for validation in test.validations:
@@ -116,6 +122,20 @@ class TestRunner:
         else:
             console, api = interceptor.snapshot()
         return TestResult(test.id, test.name, status, time.perf_counter() - started, response, error, screenshot, validations, console, api)
+
+    @staticmethod
+    def _has_api_candidate(responses, validation) -> bool:
+        url = validation.api_url or ""
+        method = (validation.api_method or "").upper()
+        status = validation.api_status
+        for item in responses:
+            actual_url = str(item.get("url", ""))
+            url_match = (not url or (url.startswith("/") and (actual_url.split("?", 1)[0].endswith(url) or actual_url.split("?", 1)[0].endswith(url.rstrip("/")))) or (url in actual_url))
+            method_match = not method or str(item.get("method", "")).upper() == method
+            status_match = status is None or int(item.get("status", -1)) == int(status)
+            if url_match and method_match and status_match:
+                return True
+        return False
 
     def _validate(self, page, validation, response: str, interceptor: NetworkInterceptor | None = None) -> ValidationResult:
         kind = validation.type.lower()
