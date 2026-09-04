@@ -22,7 +22,7 @@ def main() -> int:
     args = build_parser().parse_args()
     runner = TestRunner(config=args.config, base_url=args.base_url)
     if args.ai_provider:
-        runner.config["ai"]["provider"] = args.ai_provider
+        runner.set_ai_provider(args.ai_provider)
     try:
         results = runner.run(args.file, args.browser, args.test_id, args.output)
     except Exception as exc:
