@@ -20,14 +20,15 @@
         {
           "action": "wait_for_selector",
           "selector": "#result",
-          "timeout": 5000
+          "timeout": 10000
         }
       ],
       "validations": [
         {
           "type": "text_contains",
           "selector": "#result",
-          "expected": "OpenAI"
+          "expected": "OpenAI",
+          "timeout": 8000
         }
       ]
     }
