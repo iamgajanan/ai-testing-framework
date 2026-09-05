@@ -13,6 +13,7 @@ setup(
         "PyYAML>=6.0,<7",
         "beautifulsoup4>=4.12,<5",
         "openpyxl>=3.1,<4",
+        "reportlab>=4.0,<5",
     ],
     entry_points={"console_scripts": ["ai-test=ai_testing_framework.cli:main"]},
     python_requires=">=3.10",

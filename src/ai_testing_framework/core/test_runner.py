@@ -4,6 +4,7 @@ from __future__ import annotations
 __test__ = False
 
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -14,8 +15,10 @@ from ..parsers.csv_parser import CSVParser
 from ..parsers.json_parser import JSONParser
 from ..parsers.md_parser import MarkdownParser
 from ..parsers.xlsx_parser import XLSXParser
+from ..reporters.history import append_history
 from ..reporters.html_reporter import write_html_report
 from ..reporters.json_reporter import write_json_report
+from ..reporters.pdf_reporter import write_pdf_report
 from ..validators.ai_validator import AIValidator
 from ..validators.api_validator import validate_api_response
 from ..validators.regex_validator import validate_regex
@@ -49,12 +52,24 @@ class TestRunner:
             return XLSXParser().parse(test_file)
         raise ValueError(f"Unsupported test suite format: {suffix}. Use .md, .json, .csv, .xlsx, or .xlsm")
 
-    def run(self, test_file: str, browser: Optional[str] = None, test_id: Optional[str] = None, output_dir: Optional[str] = None) -> list[TestResult]:
+    def run(
+        self,
+        test_file: str,
+        browser: Optional[str] = None,
+        test_id: Optional[str] = None,
+        output_dir: Optional[str] = None,
+        formats: Optional[list[str]] = None,
+    ) -> list[TestResult]:
         suite = self.load_suite(test_file)
         selected = [t for t in suite.tests if not test_id or t.id == test_id]
         if not selected:
             raise ValueError(f"No matching test found for id={test_id}")
-        browser_name = browser or self.config.get("browser", "chromium")
+        browser_name  = browser or self.config.get("browser", "chromium")
+        report_dir    = output_dir or self.config["report"]["output_dir"]
+        suite_name    = suite.name
+        started_at    = datetime.now(timezone.utc).isoformat()
+        emit_formats  = formats or self.config["report"].get("formats", ["html", "json"])
+
         results: list[TestResult] = []
         engine = PlaywrightEngine(
             browser_name,
@@ -66,14 +81,22 @@ class TestRunner:
         engine.start()
         try:
             for test in selected:
-                results.append(self._run_test(engine, test, output_dir or self.config["report"]["output_dir"]))
+                results.append(self._run_test(engine, test, report_dir))
         finally:
             engine.stop()
-        report_dir = output_dir or self.config["report"]["output_dir"]
-        if self.config["report"].get("html", True):
-            write_html_report(results, report_dir)
-        if self.config["report"].get("json", True):
-            write_json_report(results, report_dir)
+
+        kw = dict(suite_name=suite_name, started_at=started_at)
+        if "html" in emit_formats or self.config["report"].get("html", True):
+            write_html_report(results, report_dir, **kw)
+        if "json" in emit_formats or self.config["report"].get("json", True):
+            write_json_report(results, report_dir, **kw)
+        if "pdf" in emit_formats or self.config["report"].get("pdf", False):
+            try:
+                write_pdf_report(results, report_dir, **kw)
+            except ImportError as exc:
+                print(f"Warning: PDF report skipped — {exc}")
+        # Always update history
+        append_history(results, report_dir, **kw)
         return results
 
     def _run_test(self, engine: PlaywrightEngine, test: TestCase, output_dir: str) -> TestResult:

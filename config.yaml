@@ -1,13 +1,17 @@
 browser: chromium
 headless: true
 timeout: 30000
+
 ai:
-  provider: openai
+  provider: none   # openai | none
   model: gpt-4o-mini
-  temperature: 0
+
 report:
   output_dir: reports
   html: true
   json: true
+  pdf: false        # set true or use --format pdf to emit PDF
+  formats: [html, json]
+
 screenshots:
   on_failure: true

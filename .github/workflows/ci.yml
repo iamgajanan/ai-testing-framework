@@ -11,13 +11,52 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Install Chromium
+
+      - name: Install Playwright browsers
         run: playwright install --with-deps chromium
-      - name: Run parser/unit tests
+
+      - name: Run unit tests
         run: pytest -q
+
+      - name: Start demo app
+        run: |
+          python examples/demo_app.py &
+          sleep 2
+          curl -sf http://127.0.0.1:8000/api/search?q=ping
+
+      - name: Run Phase 2B E2E suite
+        run: |
+          ai-test --file tests/sample_tests/test_suite.json \
+                  --base-url http://127.0.0.1:8000 \
+                  --ai-provider none \
+                  --format html json
+
+      - name: Run Phase 3 AI locator E2E suite
+        run: |
+          ai-test --file tests/sample_tests/ai_locator_suite.json \
+                  --base-url http://127.0.0.1:8000 \
+                  --ai-provider none \
+                  --format html json
+
+      - name: Run Phase 4 self-healing E2E suite
+        run: |
+          ai-test --file tests/sample_tests/self_healing_suite.json \
+                  --base-url http://127.0.0.1:8000 \
+                  --ai-provider none \
+                  --format all
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: reports/
+          retention-days: 14
