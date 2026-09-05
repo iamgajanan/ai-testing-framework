@@ -1,0 +1,44 @@
+{
+  "test_suite": "Parallel Execution Demo",
+  "tests": [
+    {
+      "id": "PAR-001",
+      "name": "Search — worker 1",
+      "url": "/",
+      "steps": [
+        {"action": "type",  "selector": "#query",  "value": "OpenAI"},
+        {"action": "click", "selector": "#submit"},
+        {"action": "wait",  "selector": "#result", "timeout": 8000}
+      ],
+      "validations": [
+        {"type": "text_contains", "selector": "#result", "expected": "OpenAI"}
+      ]
+    },
+    {
+      "id": "PAR-002",
+      "name": "Table — worker 2",
+      "url": "/table",
+      "steps": [
+        {"action": "wait", "selector": "table", "timeout": 5000}
+      ],
+      "validations": [
+        {"type": "table_validation", "selector": "table",
+         "expected_columns": ["First Name", "Last Name", "Country"],
+         "row_condition": "Country should equal 'India'"}
+      ]
+    },
+    {
+      "id": "PAR-003",
+      "name": "Search — worker 3",
+      "url": "/",
+      "steps": [
+        {"action": "type",  "selector": "#query",  "value": "AI"},
+        {"action": "click", "selector": "#submit"},
+        {"action": "wait",  "selector": "#result", "timeout": 8000}
+      ],
+      "validations": [
+        {"type": "element_present", "selector": "#result"}
+      ]
+    }
+  ]
+}

@@ -13,6 +13,7 @@ DEFAULT_CONFIG = {
     "ai": {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0},
     "report": {"output_dir": "reports", "html": True, "json": True},
     "screenshots": {"on_failure": True},
+    "parallel": {"workers": 1},
 }
 
 

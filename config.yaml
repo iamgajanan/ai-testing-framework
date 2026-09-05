@@ -15,3 +15,6 @@ report:
 
 screenshots:
   on_failure: true
+
+parallel:
+  workers: 1        # >1 runs tests concurrently (each gets its own browser)

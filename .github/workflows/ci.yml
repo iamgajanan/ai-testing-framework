@@ -32,26 +32,29 @@ jobs:
           sleep 2
           curl -sf http://127.0.0.1:8000/api/search?q=ping
 
-      - name: Run Phase 2B E2E suite
+      - name: E2E — Phase 2B (sequential)
         run: |
           ai-test --file tests/sample_tests/test_suite.json \
                   --base-url http://127.0.0.1:8000 \
-                  --ai-provider none \
-                  --format html json
+                  --ai-provider none --format html json
 
-      - name: Run Phase 3 AI locator E2E suite
+      - name: E2E — Phase 3 AI locator
         run: |
           ai-test --file tests/sample_tests/ai_locator_suite.json \
                   --base-url http://127.0.0.1:8000 \
-                  --ai-provider none \
-                  --format html json
+                  --ai-provider none
 
-      - name: Run Phase 4 self-healing E2E suite
+      - name: E2E — Phase 4 self-healing
         run: |
           ai-test --file tests/sample_tests/self_healing_suite.json \
                   --base-url http://127.0.0.1:8000 \
-                  --ai-provider none \
-                  --format all
+                  --ai-provider none --format all
+
+      - name: E2E — Phase 6 parallel (3 workers)
+        run: |
+          ai-test --file tests/sample_tests/parallel_suite.json \
+                  --base-url http://127.0.0.1:8000 \
+                  --ai-provider none --workers 3
 
       - name: Upload test reports
         if: always()

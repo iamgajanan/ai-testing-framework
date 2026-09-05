@@ -17,6 +17,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config",   default=None,   help="YAML configuration file")
     parser.add_argument("--ai-provider", choices=["openai", "none"], default=None)
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Parallel browser workers (default: 1 = sequential)",
+    )
+    parser.add_argument(
         "--format",
         dest="formats",
         nargs="+",
@@ -28,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _write_github_summary(results, output_dir: str) -> None:
+def _write_github_summary(results, output_dir: str, workers: int = 1) -> None:
     """Write a Markdown step summary to $GITHUB_STEP_SUMMARY if running in CI."""
     summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
     if not summary_file:
@@ -38,13 +45,14 @@ def _write_github_summary(results, output_dir: str) -> None:
     failed = total - passed
     dur    = sum(r.duration for r in results)
     rate   = (passed / total * 100) if total else 0
+    mode   = f"{workers} workers (parallel)" if workers > 1 else "sequential"
 
     lines = [
         "## 🤖 AI Test Report",
         "",
-        f"| Total | Passed | Failed | Pass Rate | Duration |",
-        f"|-------|--------|--------|-----------|----------|",
-        f"| {total} | {passed} | {failed} | {rate:.1f}% | {dur:.1f}s |",
+        f"| Total | Passed | Failed | Pass Rate | Duration | Mode |",
+        f"|-------|--------|--------|-----------|----------|------|",
+        f"| {total} | {passed} | {failed} | {rate:.1f}% | {dur:.1f}s | {mode} |",
         "",
         "### Results",
         "",
@@ -94,6 +102,7 @@ def main() -> int:
             test_id=args.test_id,
             output_dir=args.output,
             formats=formats,
+            workers=args.workers,
         )
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -101,10 +110,12 @@ def main() -> int:
 
     passed = sum(r.status == "PASS" for r in results)
     failed = len(results) - passed
-    print(f"Tests: {len(results)} | Passed: {passed} | Failed: {failed}")
+    w = args.workers or 1
+    mode = f" ({w} workers)" if w > 1 else ""
+    print(f"Tests: {len(results)} | Passed: {passed} | Failed: {failed}{mode}")
     print(f"HTML report: {args.output}/test_report.html")
 
-    _write_github_summary(results, args.output)
+    _write_github_summary(results, args.output, workers=w)
 
     return 0 if failed == 0 else 1
 
