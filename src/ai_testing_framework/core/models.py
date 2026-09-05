@@ -62,6 +62,7 @@ class TestResult:
     validations: List[ValidationResult] = field(default_factory=list)
     console_errors: List[str] = field(default_factory=list)
     api_errors: List[str] = field(default_factory=list)
+    healed_selectors: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

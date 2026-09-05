@@ -33,6 +33,21 @@ def write_html_report(results: Iterable[TestResult], output_dir: str = "reports"
         )
 
         diagnostics = ""
+        if getattr(r, "healed_selectors", []):
+            rows = "".join(
+                f"<tr><td><code>{html.escape(h['failed_selector'])}</code></td>"
+                f"<td><code>{html.escape(h['healed_selector'])}</code></td>"
+                f"<td>{html.escape(h.get('reason', ''))}</td>"
+                f"<td>{h.get('confidence', 0):.2f}</td></tr>"
+                for h in r.healed_selectors
+            )
+            diagnostics += (
+                "<h4>⚕️ Self-healed selectors</h4>"
+                "<table border='1' cellpadding='4' style='border-collapse:collapse;font-size:0.9em'>"
+                "<thead><tr><th>Failed selector</th><th>Healed selector</th>"
+                "<th>Reason</th><th>Confidence</th></tr></thead>"
+                f"<tbody>{rows}</tbody></table>"
+            )
         if r.console_errors:
             diagnostics += (
                 "<h4>Console errors</h4><pre>"

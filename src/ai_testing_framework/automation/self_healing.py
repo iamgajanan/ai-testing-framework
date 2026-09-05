@@ -154,7 +154,7 @@ class SelfHealing:
         all_words = sel_words | desc_words
 
         # Infer expected element type from description / selector words
-        wants_button = bool({"button", "submit", "btn"} & (desc_words | sel_words))
+        wants_button = bool({"button", "submit", "btn", "link"} & (desc_words | sel_words))
         wants_input  = bool({"input", "field", "query", "text", "search", "email",
                               "password", "username", "name"} & (desc_words | sel_words))
         wants_select = bool({"select", "dropdown", "option"} & (desc_words | sel_words))

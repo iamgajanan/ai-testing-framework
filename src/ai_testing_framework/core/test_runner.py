@@ -83,6 +83,7 @@ class TestRunner:
         response = ""
         screenshot = None
         interceptor = NetworkInterceptor()
+        engine.healed_selectors = []
         assert engine.page is not None
         interceptor.attach(engine.page)
         try:
@@ -124,7 +125,11 @@ class TestRunner:
             status = "FAIL"
         else:
             console, api = interceptor.snapshot()
-        return TestResult(test.id, test.name, status, time.perf_counter() - started, response, error, screenshot, validations, console, api)
+        return TestResult(
+            test.id, test.name, status, time.perf_counter() - started,
+            response, error, screenshot, validations, console, api,
+            healed_selectors=list(engine.healed_selectors),
+        )
 
     @staticmethod
     def _has_api_candidate(responses, validation) -> bool:

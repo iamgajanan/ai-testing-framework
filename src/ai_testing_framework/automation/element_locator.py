@@ -5,7 +5,6 @@ import os
 import re
 from typing import Any, Optional
 
-from openai import OpenAI
 from playwright.sync_api import Page
 
 
@@ -14,16 +13,19 @@ class AIElementLocator:
 
     SYSTEM_PROMPT = (
         "You map a natural-language web element description to one candidate from a live DOM. "
-        "Return JSON only: {index: integer, reason: string, confidence: number}. "
+        "Return JSON only: {\"index\": integer, \"reason\": string, \"confidence\": number}. "
         "Never invent an index. Prefer the candidate whose accessible name, role, placeholder, "
         "name, id, or visible text best matches the description."
     )
 
-    def __init__(self, provider: str = "openai", model: str = "gpt-4o-mini") -> None:
+    def __init__(self, provider: str = "none", model: str = "gpt-4o-mini") -> None:
         self.provider = provider.lower()
         self.model = model
+        self.client = None
         api_key = os.getenv("OPENAI_API_KEY")
-        self.client = OpenAI(api_key=api_key) if self.provider == "openai" and api_key else None
+        if self.provider == "openai" and api_key:
+            from openai import OpenAI
+            self.client = OpenAI(api_key=api_key)
 
     def find_element(self, page: Page, description: str):
         """Return a unique Playwright Locator for a natural-language description."""
