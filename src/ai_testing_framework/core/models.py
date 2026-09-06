@@ -58,6 +58,18 @@ class TestCase:
 
 
 @dataclass
+class StepResult:
+    action: str
+    selector: Optional[str] = None
+    value: Any = None
+    description: str = ""
+    status: str = "PASS"
+    duration: float = 0.0
+    result: Any = None
+    error: str = ""
+
+
+@dataclass
 class ValidationResult:
     type: str
     passed: bool
@@ -75,6 +87,7 @@ class TestResult:
     response: str = ""
     error: str = ""
     screenshot: Optional[str] = None
+    steps: List[StepResult] = field(default_factory=list)
     validations: List[ValidationResult] = field(default_factory=list)
     console_errors: List[str] = field(default_factory=list)
     api_errors: List[str] = field(default_factory=list)
