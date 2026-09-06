@@ -93,18 +93,24 @@ class PlaywrightEngine:
         action = step.action.lower().strip()
         selector: Optional[str] = step.selector
         description: str = getattr(step, "description", "") or ""
-        value: str = "" if step.value is None else str(step.value)
+        value = step.value
+        value_text = "" if value is None else str(value)
         timeout: int = getattr(step, "timeout", self.timeout)
 
+        if action in {"evaluate", "javascript", "js"}:
+            if not value_text.strip():
+                raise ValueError("Evaluate step requires JavaScript in 'value'.")
+            return self.page.evaluate(value_text)
+
         if action in {"press", "keyboard"} and not selector and not description:
-            self.page.keyboard.press(value)
+            self.page.keyboard.press(value_text)
             return
         if action == "wait_for_load_state":
-            self.page.wait_for_load_state(value or "networkidle", timeout=timeout)
+            self.page.wait_for_load_state(value_text or "networkidle", timeout=timeout)
             return
 
         if action in {"upload", "set_input_files"}:
-            upload_path = Path(value).expanduser()
+            upload_path = Path(value_text).expanduser()
             if not upload_path.exists() or not upload_path.is_file():
                 raise FileNotFoundError(f"Upload file does not exist: {upload_path}")
             self.uploads.append(str(upload_path.resolve()))
@@ -113,7 +119,7 @@ class PlaywrightEngine:
         heal = lambda fn: self._try_heal(selector, description, fn, timeout) if selector and self.self_healing else fn(locator)
 
         if action in {"type", "fill"}:
-            heal(lambda l: l.fill(value, timeout=timeout))
+            heal(lambda l: l.fill(value_text, timeout=timeout))
         elif action == "click":
             heal(lambda l: l.click(timeout=timeout))
         elif action in {"check", "checkbox"}:
@@ -121,17 +127,17 @@ class PlaywrightEngine:
         elif action == "uncheck":
             heal(lambda l: l.uncheck(timeout=timeout))
         elif action in {"select", "select_option"}:
-            heal(lambda l: l.select_option(value, timeout=timeout))
+            heal(lambda l: l.select_option(value_text, timeout=timeout))
         elif action == "hover":
             heal(lambda l: l.hover(timeout=timeout))
         elif action in {"press", "keyboard"}:
-            heal(lambda l: l.press(value, timeout=timeout))
+            heal(lambda l: l.press(value_text, timeout=timeout))
         elif action in {"upload", "set_input_files"}:
-            heal(lambda l: l.set_input_files(value, timeout=timeout))
+            heal(lambda l: l.set_input_files(value_text, timeout=timeout))
         elif action in {"wait", "wait_for_selector"}:
             heal(lambda l: l.wait_for(state="visible", timeout=timeout))
         elif action in {"wait_for_response", "response"}:
-            with self.page.expect_response(value, timeout=timeout) as response_info:
+            with self.page.expect_response(value_text, timeout=timeout) as response_info:
                 if selector or description:
                     locator.click(timeout=timeout)
             return response_info.value
