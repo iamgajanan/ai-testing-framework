@@ -59,7 +59,12 @@ class TestGenerator:
  def _ai_generate(self,page_info,relative_url):
   prompt=json.dumps({'url':relative_url,'page_info':page_info},ensure_ascii=False);resp=self.client.chat.completions.create(model=self.model,temperature=.1,messages=[{'role':'system','content':_SYSTEM_PROMPT},{'role':'user','content':prompt}]);raw=(resp.choices[0].message.content or '{}').strip()
   if raw.startswith('```'):raw=raw.split('\n',1)[-1].rsplit('```',1)[0]
-  suite=json.loads(raw);suite.setdefault('test_suite',page_info.get('title') or 'Generated Suite');suite['tests']=suite.get('tests',[]) if isinstance(suite.get('tests',[]),list) else [];return suite
+  suite=json.loads(raw)
+  if isinstance(suite.get('test_suite'),dict):
+   nested=suite['test_suite'];tests=nested.get('tests')
+   if (not isinstance(suite.get('tests'),list) or not suite.get('tests')) and isinstance(tests,list):suite['tests']=tests
+   suite['test_suite']=nested.get('name') or nested.get('id') or page_info.get('title') or 'Generated Suite'
+  suite.setdefault('test_suite',page_info.get('title') or 'Generated Suite');suite['tests']=suite.get('tests',[]) if isinstance(suite.get('tests',[]),list) else [];return suite
  def _sanitize_suite(self,suite,page_info,relative_url):
   inputs,buttons,links=page_info.get('inputs',[]),page_info.get('buttons',[]),page_info.get('links',[]);file_selectors={self._selector(x) for x in inputs if x.get('type')=='file'};download_selectors={self._selector(x) for x in links if self._selector(x) and(x.get('download') or self._looks_downloadable(x.get('href','')))};cleaned=[]
   for index,test in enumerate(suite.get('tests',[]),1):
