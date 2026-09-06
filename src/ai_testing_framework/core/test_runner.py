@@ -30,6 +30,7 @@ from ..validators.ui_validator import (
     validate_element_state, validate_element_value, validate_text_contains,
     validate_url_contains,
 )
+from ..validators.visual_validator import compare_screenshots
 from .config import load_config
 
 
@@ -48,51 +49,34 @@ class TestRunner:
 
     def load_suite(self, test_file: str) -> TestSuite:
         suffix = Path(test_file).suffix.lower()
-        if suffix == ".json":
-            return JSONParser().parse(test_file)
-        if suffix in {".md", ".markdown"}:
-            return MarkdownParser().parse(test_file)
-        if suffix == ".csv":
-            return CSVParser().parse(test_file)
-        if suffix in {".xlsx", ".xlsm"}:
-            return XLSXParser().parse(test_file)
+        if suffix == ".json": return JSONParser().parse(test_file)
+        if suffix in {".md", ".markdown"}: return MarkdownParser().parse(test_file)
+        if suffix == ".csv": return CSVParser().parse(test_file)
+        if suffix in {".xlsx", ".xlsm"}: return XLSXParser().parse(test_file)
         raise ValueError(f"Unsupported test suite format: {suffix}. Use .md, .json, .csv, .xlsx, or .xlsm")
 
     def run(self, test_file: str, browser: Optional[str] = None, test_id: Optional[str] = None,
             output_dir: Optional[str] = None, formats: Optional[list[str]] = None,
             workers: Optional[int] = None) -> list[TestResult]:
-        suite = self.load_suite(test_file)
-        selected = [t for t in suite.tests if not test_id or t.id == test_id]
-        if not selected:
-            raise ValueError(f"No matching test found for id={test_id!r}")
-        report_dir = output_dir or self.config["report"]["output_dir"]
-        suite_name = suite.name
-        started_at = datetime.now(timezone.utc).isoformat()
+        suite = self.load_suite(test_file); selected = [t for t in suite.tests if not test_id or t.id == test_id]
+        if not selected: raise ValueError(f"No matching test found for id={test_id!r}")
+        report_dir = output_dir or self.config["report"]["output_dir"]; suite_name = suite.name; started_at = datetime.now(timezone.utc).isoformat()
         emit_formats = formats or self.config["report"].get("formats", ["html", "json"])
         n_workers = max(1, int(workers if workers is not None else self.config.get("parallel", {}).get("workers", 1)))
         run_config = {
-            "browser_name": browser or self.config.get("browser", "chromium"),
-            "headless": self.config.get("headless", True),
-            "timeout": self.config.get("timeout", 30000),
-            "ai_provider": self.config["ai"]["provider"],
-            "ai_model": self.config["ai"]["model"],
-            "base_url": self.base_url,
-            "report_dir": report_dir,
-            "analyze_failures": self.config.get("ai", {}).get("analyze_failures", True),
-            "self_healing": self.config.get("self_healing", {}).get("enabled", True),
-            "healing_confidence": self.config.get("self_healing", {}).get("min_confidence", 0.70),
+            "browser_name": browser or self.config.get("browser", "chromium"), "headless": self.config.get("headless", True),
+            "timeout": self.config.get("timeout", 30000), "ai_provider": self.config["ai"]["provider"], "ai_model": self.config["ai"]["model"],
+            "base_url": self.base_url, "report_dir": report_dir, "analyze_failures": self.config.get("ai", {}).get("analyze_failures", True),
+            "self_healing": self.config.get("self_healing", {}).get("enabled", True), "healing_confidence": self.config.get("self_healing", {}).get("min_confidence", 0.70),
+            "record_trace": self.config.get("artifacts", {}).get("trace_on_failure", True), "record_video": self.config.get("artifacts", {}).get("video_on_failure", True),
         }
         results = run_parallel(selected, lambda test: _run_test_isolated(test, run_config), workers=n_workers)
         kw = dict(suite_name=suite_name, started_at=started_at)
-        if "html" in emit_formats or self.config["report"].get("html", True):
-            write_html_report(results, report_dir, **kw)
-        if "json" in emit_formats or self.config["report"].get("json", True):
-            write_json_report(results, report_dir, **kw)
+        if "html" in emit_formats or self.config["report"].get("html", True): write_html_report(results, report_dir, **kw)
+        if "json" in emit_formats or self.config["report"].get("json", True): write_json_report(results, report_dir, **kw)
         if "pdf" in emit_formats or self.config["report"].get("pdf", False):
-            try:
-                write_pdf_report(results, report_dir, **kw)
-            except ImportError as exc:
-                print(f"Warning: PDF report skipped — {exc}")
+            try: write_pdf_report(results, report_dir, **kw)
+            except ImportError as exc: print(f"Warning: PDF report skipped — {exc}")
         append_history(results, report_dir, **kw)
         return results
 
@@ -100,11 +84,9 @@ class TestRunner:
     def _has_api_candidate(responses: list, validation) -> bool:
         url, method, status = validation.api_url or "", (validation.api_method or "").upper(), validation.api_status
         for item in responses:
-            actual = str(item.get("url", ""))
-            path = actual.split("?", 1)[0]
+            actual = str(item.get("url", "")); path = actual.split("?", 1)[0]
             url_match = not url or (url.startswith("/") and (path.endswith(url) or path.endswith(url.rstrip("/")))) or url in actual
-            if url_match and (not method or str(item.get("method", "")).upper() == method) and (status is None or int(item.get("status", -1)) == int(status)):
-                return True
+            if url_match and (not method or str(item.get("method", "")).upper() == method) and (status is None or int(item.get("status", -1)) == int(status)): return True
         return False
 
     def _validate(self, page, validation, response: str, interceptor: Optional[NetworkInterceptor] = None) -> ValidationResult:
@@ -112,160 +94,100 @@ class TestRunner:
 
 
 def _validate(ai: AIValidator, page, validation, response: str, interceptor: Optional[NetworkInterceptor] = None,
-              artifact_dir: str = "reports", downloaded_files: Optional[list[str]] = None) -> ValidationResult:
+              artifact_dir: str = "reports", downloaded_files: Optional[list[str]] = None, screenshot_path: Optional[str] = None) -> ValidationResult:
     kind = validation.type.lower()
     if kind == "ai_semantic":
-        result = ai.validate_response(response, str(validation.expected or ""), validation.prompt)
-        passed, conf, reason = bool(result.get("pass")), float(result.get("confidence", 0)), result.get("reason", "")
-        if passed and validation.min_confidence is not None and conf < validation.min_confidence:
-            passed = False
-            reason = f"AI said pass but confidence {conf:.0%} < required {validation.min_confidence:.0%}. " + reason
+        result = ai.validate_response(response, str(validation.expected or ""), validation.prompt); passed, conf, reason = bool(result.get("pass")), float(result.get("confidence", 0)), result.get("reason", "")
+        if passed and validation.min_confidence is not None and conf < validation.min_confidence: passed=False; reason=f"AI said pass but confidence {conf:.0%} < required {validation.min_confidence:.0%}. " + reason
         return ValidationResult(kind, passed, reason, conf)
     if kind == "api_response":
-        if interceptor is None:
-            return ValidationResult(kind, False, "API interceptor is not available")
-        passed, reason, actual = validate_api_response(
-            interceptor.response_snapshot(), url=validation.api_url or "", method=validation.api_method or "",
-            status=validation.api_status, request_headers=validation.api_request_headers,
-            response_headers=validation.api_response_headers, request_body=validation.api_request_body,
-            response_body=validation.api_response_body, json_schema=validation.api_json_schema,
-            response_time_ms=validation.api_response_time_ms, json_path=validation.json_path or "",
-            expected=validation.expected, body_contains=validation.body_contains or "")
+        if interceptor is None: return ValidationResult(kind, False, "API interceptor is not available")
+        passed, reason, actual = validate_api_response(interceptor.response_snapshot(), url=validation.api_url or "", method=validation.api_method or "", status=validation.api_status, request_headers=validation.api_request_headers, response_headers=validation.api_response_headers, request_body=validation.api_request_body, response_body=validation.api_response_body, json_schema=validation.api_json_schema, response_time_ms=validation.api_response_time_ms, json_path=validation.json_path or "", expected=validation.expected, body_contains=validation.body_contains or "")
         return ValidationResult(kind, passed, reason, actual=actual)
     if kind == "regex":
-        passed, reason = validate_regex(response, validation.pattern or "")
-        return ValidationResult(kind, passed, reason, actual=response)
+        passed, reason = validate_regex(response, validation.pattern or ""); return ValidationResult(kind, passed, reason, actual=response)
     if kind == "element_present":
-        passed, reason = validate_element_present(page, validation.selector or "")
-        return ValidationResult(kind, passed, reason)
+        passed, reason = validate_element_present(page, validation.selector or ""); return ValidationResult(kind, passed, reason)
     if kind in {"text_contains", "ui_text"}:
-        if kind == "ui_text" and not validation.selector:
-            passed = str(validation.expected or "").lower() in response.lower()
-            return ValidationResult(kind, passed, f"Expected text: {validation.expected!r}")
-        passed, reason = validate_text_contains(page, validation.selector or ".result-text, .result-container", str(validation.expected or ""), timeout=validation.timeout)
-        return ValidationResult(kind, passed, reason)
+        if kind == "ui_text" and not validation.selector: return ValidationResult(kind, str(validation.expected or "").lower() in response.lower(), f"Expected text: {validation.expected!r}")
+        passed, reason = validate_text_contains(page, validation.selector or ".result-text, .result-container", str(validation.expected or ""), timeout=validation.timeout); return ValidationResult(kind, passed, reason)
     if kind == "url_contains":
-        passed, reason = validate_url_contains(page, str(validation.expected or ""))
-        return ValidationResult(kind, passed, reason)
+        passed, reason = validate_url_contains(page, str(validation.expected or "")); return ValidationResult(kind, passed, reason)
     if kind == "table_validation":
-        passed, reason = validate_table(page, validation.selector, validation.expected_columns, validation.row_condition)
-        return ValidationResult(kind, passed, reason)
+        passed, reason = validate_table(page, validation.selector, validation.expected_columns, validation.row_condition); return ValidationResult(kind, passed, reason)
     if kind in {"element_attribute", "attribute"}:
         attribute = validation.attribute or validation.prompt
-        if not attribute:
-            raise ValueError("element_attribute validation requires 'attribute'")
-        passed, reason = validate_element_attribute(page, validation.selector or "", attribute, validation.expected)
-        return ValidationResult(kind, passed, reason)
+        if not attribute: raise ValueError("element_attribute validation requires 'attribute'")
+        passed, reason = validate_element_attribute(page, validation.selector or "", attribute, validation.expected); return ValidationResult(kind, passed, reason)
     if kind == "element_value":
-        passed, reason = validate_element_value(page, validation.selector or "", validation.expected)
-        return ValidationResult(kind, passed, reason)
+        passed, reason = validate_element_value(page, validation.selector or "", validation.expected); return ValidationResult(kind, passed, reason)
     if kind in {"element_visible", "element_hidden", "element_enabled", "element_disabled", "element_checked", "element_unchecked", "element_editable"}:
-        state = kind.removeprefix("element_")
-        passed, reason = validate_element_state(page, validation.selector or "", state, True)
-        return ValidationResult(kind, passed, reason)
+        state = kind.removeprefix("element_"); passed, reason = validate_element_state(page, validation.selector or "", state, True); return ValidationResult(kind, passed, reason)
     if kind == "element_count":
-        passed, reason = validate_element_count(page, validation.selector or "", int(validation.expected))
-        return ValidationResult(kind, passed, reason, actual=page.locator(validation.selector or "").count())
+        passed, reason = validate_element_count(page, validation.selector or "", int(validation.expected)); return ValidationResult(kind, passed, reason, actual=page.locator(validation.selector or "").count())
     if kind in {"file_validation", "download_validation", "upload_validation"}:
-        path = validation.file_path
-        if not path and downloaded_files:
-            path = downloaded_files[-1]
-        if not path:
-            return ValidationResult(kind, False, "No file path supplied and no download was captured")
-        passed, reason, meta = validate_file(
-            path, base_dir=Path.cwd(), expected_filename=validation.expected_filename,
-            expected_extension=validation.expected_extension, expected_mime=validation.expected_mime,
-            min_size=validation.min_size, max_size=validation.max_size, text_contains=validation.file_text_contains,
-            pattern=validation.file_pattern, file_type=validation.file_type, json_path=validation.json_path,
-            expected=validation.expected, expected_columns=validation.expected_columns)
+        path = validation.file_path or (downloaded_files[-1] if downloaded_files else None)
+        if not path: return ValidationResult(kind, False, "No file path supplied and no download was captured")
+        passed, reason, meta = validate_file(path, base_dir=Path.cwd(), expected_filename=validation.expected_filename, expected_extension=validation.expected_extension, expected_mime=validation.expected_mime, min_size=validation.min_size, max_size=validation.max_size, text_contains=validation.file_text_contains, pattern=validation.file_pattern, file_type=validation.file_type, json_path=validation.json_path, expected=validation.expected, expected_columns=validation.expected_columns)
+        return ValidationResult(kind, passed, reason, actual=meta)
+    if kind in {"visual_regression", "screenshot_diff"}:
+        if not screenshot_path: return ValidationResult(kind, False, "Visual regression requires a captured screenshot")
+        baseline = validation.baseline_path
+        if not baseline: return ValidationResult(kind, False, "Visual regression requires 'baseline_path'")
+        if not Path(baseline).expanduser().is_file(): return ValidationResult(kind, False, f"Baseline screenshot does not exist: {baseline}")
+        passed, meta = compare_screenshots(screenshot_path, str(Path(baseline).expanduser()), validation.pixel_threshold)
+        reason = f"Pixel diff {meta.get('diff_ratio', 1.0):.4%} <= threshold {validation.pixel_threshold:.4%}" if passed else str(meta.get("reason") or f"Pixel diff {meta.get('diff_ratio', 1.0):.4%} exceeds threshold {validation.pixel_threshold:.4%}")
         return ValidationResult(kind, passed, reason, actual=meta)
     raise ValueError(f"Unsupported validation type: {validation.type!r}")
 
 
 def _safe_trace_value(value):
-    if value is None or isinstance(value, (str, int, float, bool, dict, list)):
-        return value
+    if value is None or isinstance(value, (str, int, float, bool, dict, list)): return value
     return str(value)
 
 
 def _run_test_isolated(test: TestCase, run_config: dict) -> TestResult:
-    started = time.perf_counter()
-    validations: list[ValidationResult] = []
-    step_results: list[StepResult] = []
-    error = response = ""
-    screenshot = None
-    console: list[str] = []
-    api_errs: list[str] = []
-    engine = PlaywrightEngine(browser_name=run_config["browser_name"], headless=run_config["headless"], timeout=run_config["timeout"],
-                              ai_provider=run_config["ai_provider"], ai_model=run_config["ai_model"],
-                              self_healing=run_config.get("self_healing", True), healing_confidence=run_config.get("healing_confidence", .70),
-                              artifact_dir=run_config["report_dir"])
-    engine.start()
+    started=time.perf_counter(); validations=[]; step_results=[]; error=response=""; screenshot=None; console=[]; api_errs=[]
+    engine=PlaywrightEngine(browser_name=run_config["browser_name"],headless=run_config["headless"],timeout=run_config["timeout"],ai_provider=run_config["ai_provider"],ai_model=run_config["ai_model"],self_healing=run_config.get("self_healing",True),healing_confidence=run_config.get("healing_confidence",.70),artifact_dir=run_config["report_dir"],record_trace=run_config.get("record_trace",True),record_video=run_config.get("record_video",True))
+    interceptor=None; status="FAIL"
     try:
-        interceptor = NetworkInterceptor()
-        assert engine.page is not None
-        interceptor.attach(engine.page)
-        engine.open(test.url, run_config["base_url"])
+        interceptor=NetworkInterceptor(); engine.start(); assert engine.page is not None; interceptor.attach(engine.page); engine.open(test.url,run_config["base_url"])
         for step in test.steps:
-            step_started = time.perf_counter()
-            trace = StepResult(action=step.action, selector=step.selector, value=step.value, description=step.description)
-            try:
-                step_output = engine.run_step(step)
-                trace.result = _safe_trace_value(step_output)
-                trace.duration = time.perf_counter() - step_started
-                step_results.append(trace)
-            except Exception as exc:
-                trace.status = "FAIL"
-                trace.duration = time.perf_counter() - step_started
-                trace.error = str(exc)
-                step_results.append(trace)
-                raise
-        api_validations = [v for v in test.validations if v.type.lower() == "api_response"]
+            step_started=time.perf_counter(); trace=StepResult(action=step.action,selector=step.selector,value=step.value,description=step.description)
+            try: trace.result=_safe_trace_value(engine.run_step(step)); trace.duration=time.perf_counter()-step_started; step_results.append(trace)
+            except Exception as exc: trace.status="FAIL"; trace.duration=time.perf_counter()-step_started; trace.error=str(exc); step_results.append(trace); raise
+        api_validations=[v for v in test.validations if v.type.lower()=="api_response"]
         if api_validations:
-            deadline = time.monotonic() + 2.0
-            while time.monotonic() < deadline:
-                snapshot = interceptor.response_snapshot()
-                if all(TestRunner._has_api_candidate(snapshot, v) for v in api_validations):
-                    break
+            deadline=time.monotonic()+2.0
+            while time.monotonic()<deadline:
+                if all(TestRunner._has_api_candidate(interceptor.response_snapshot(),v) for v in api_validations): break
                 engine.page.wait_for_timeout(50)
-        response = engine.response_text()
-        for validation in test.validations:
-            validations.append(_validate(AIValidator(run_config["ai_provider"], run_config["ai_model"]), engine.page, validation, response, interceptor, run_config["report_dir"], engine.downloads))
-        console, api_errs = interceptor.snapshot()
-        if any(c.lower() == "console_errors" for c in test.error_checks) and console:
-            validations.append(ValidationResult("console_errors", False, f"{len(console)} console error(s)"))
-            error = "Console errors detected"
-        if any(c.lower() == "api_errors" for c in test.error_checks) and api_errs:
-            validations.append(ValidationResult("api_errors", False, f"{len(api_errs)} network error(s)"))
-            error = error or "API/network errors detected"
-        failed = [v for v in validations if not v.passed]
+        response=engine.response_text()
+        visual=[v for v in test.validations if v.type.lower() in {"visual_regression","screenshot_diff"}]
+        if visual:
+            screenshot=engine.screenshot(str(Path(run_config["report_dir"])/"screenshots"/f"{test.id}.png"))
+        for validation in test.validations: validations.append(_validate(AIValidator(run_config["ai_provider"],run_config["ai_model"]),engine.page,validation,response,interceptor,run_config["report_dir"],engine.downloads,screenshot))
+        console,api_errs=interceptor.snapshot()
+        if any(c.lower()=="console_errors" for c in test.error_checks) and console: validations.append(ValidationResult("console_errors",False,f"{len(console)} console error(s)")); error="Console errors detected"
+        if any(c.lower()=="api_errors" for c in test.error_checks) and api_errs: validations.append(ValidationResult("api_errors",False,f"{len(api_errs)} network error(s)")); error=error or "API/network errors detected"
+        failed=[v for v in validations if not v.passed]
         if failed:
-            error = error or "; ".join(v.reason for v in failed)
-            try:
-                screenshot = engine.screenshot(str(Path(run_config["report_dir"]) / "screenshots" / f"{test.id}.png"))
-            except Exception:
-                pass
-        status = "PASS" if not failed else "FAIL"
+            error=error or "; ".join(v.reason for v in failed)
+            if screenshot is None:
+                try:screenshot=engine.screenshot(str(Path(run_config["report_dir"])/"screenshots"/f"{test.id}.png"))
+                except Exception:pass
+        status="PASS" if not failed else "FAIL"
     except Exception as exc:
-        error = str(exc)
-        console, api_errs = [], []
-        try:
-            console, api_errs = interceptor.snapshot()
-        except Exception:
-            pass
-        try:
-            screenshot = engine.screenshot(str(Path(run_config["report_dir"]) / "screenshots" / f"{test.id}.png"))
-        except Exception:
-            pass
-        status = "FAIL"
+        error=str(exc); console=[]; api_errs=[]
+        try: console,api_errs=interceptor.snapshot() if interceptor else ([],[])
+        except Exception: pass
+        try:screenshot=engine.screenshot(str(Path(run_config["report_dir"])/"screenshots"/f"{test.id}.png"))
+        except Exception:pass
+        status="FAIL"
     finally:
-        engine.stop()
-    result = TestResult(id=test.id, name=test.name, status=status, duration=time.perf_counter() - started,
-                        response=response, error=error, screenshot=screenshot, steps=step_results, validations=validations,
-                        console_errors=console, api_errors=api_errs, healed_selectors=list(engine.healed_selectors))
-    if result.status == "FAIL" and run_config.get("analyze_failures", True):
-        try:
-            result.failure_analysis = FailureAnalyzer(provider=run_config.get("ai_provider", "none"), model=run_config.get("ai_model", "gpt-4o-mini")).analyze(result)
-        except Exception:
-            pass
+        engine.stop(success=status=="PASS")
+    result=TestResult(id=test.id,name=test.name,status=status,duration=time.perf_counter()-started,response=response,error=error,screenshot=screenshot,steps=step_results,validations=validations,console_errors=console,api_errors=api_errs,healed_selectors=list(engine.healed_selectors),trace=engine.trace_path if status=="FAIL" else None,video=engine.video_path if status=="FAIL" else None)
+    if result.status=="FAIL" and run_config.get("analyze_failures",True):
+        try: result.failure_analysis=FailureAnalyzer(provider=run_config.get("ai_provider","none"),model=run_config.get("ai_model","gpt-4o-mini")).analyze(result)
+        except Exception: pass
     return result

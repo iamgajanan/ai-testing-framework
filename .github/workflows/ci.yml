@@ -46,10 +46,36 @@ jobs:
         run: ai-test --file tests/sample_tests/advanced_suite.json --base-url http://127.0.0.1:8000 --ai-provider none --browser ${{ matrix.browser }} --format html json
       - name: E2E Phase B auth, dialogs and tabs
         run: ai-test --file tests/sample_tests/phase_b_suite.json --base-url http://127.0.0.1:8000 --ai-provider none --browser ${{ matrix.browser }} --format html json
+      - name: E2E Phase C route mocks and visual regression
+        run: |
+          python tests/create_visual_baseline.py --browser ${{ matrix.browser }}
+          ai-test --file tests/sample_tests/phase_c_suite.json --base-url http://127.0.0.1:8000 --ai-provider none --browser ${{ matrix.browser }} --format html json
+      - name: E2E Phase C authenticated crawler
+        run: |
+          python - <<'PY'
+          import json
+          from ai_testing_framework.ai.test_generator import TestGenerator
+          login={"url":"http://127.0.0.1:8000/auth","username_selector":"#username","password_selector":"#password","submit_selector":"#login","username":"demo","password":"secret","success_url":"http://127.0.0.1:8000/protected"}
+          path=TestGenerator('none').generate_authenticated('http://127.0.0.1:8000/auth','/tmp/authenticated_suite.json',login,browser='${{ matrix.browser }}',max_pages=3)
+          data=json.load(open(path,encoding='utf-8'))
+          assert any(t.get('url')=='/protected' for t in data['tests']), data
+          print('authenticated pages discovered:', sorted({t.get('url') for t in data['tests']}))
+          PY
+      - name: E2E Phase C failure artifacts
+        run: python tests/verify_phase_c_artifacts.py
       - name: E2E AI test generation and multi-page discovery
         run: |
           ai-test generate --url http://127.0.0.1:8000 --output /tmp/generated_suite.json --browser ${{ matrix.browser }} --ai-provider none --max-pages 3
           ai-test --file /tmp/generated_suite.json --base-url http://127.0.0.1:8000 --ai-provider none --browser ${{ matrix.browser }}
+      - name: Agentic planning and data generation
+        run: |
+          ai-test plan --description "A customer search application" --workflow "Search for a customer" --output /tmp/plan.json --ai-provider none
+          ai-test data --fields '[{"name":"email","type":"email"},{"name":"start_date","type":"date"}]' --count 2 --output /tmp/data.json --ai-provider none
+          python - <<'PY'
+          import json
+          assert json.load(open('/tmp/plan.json'))['scenarios']
+          assert len(json.load(open('/tmp/data.json'))['data']) == 2
+          PY
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4

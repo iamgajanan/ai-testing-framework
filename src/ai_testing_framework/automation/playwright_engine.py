@@ -5,16 +5,38 @@ from playwright.sync_api import sync_playwright
 from .element_locator import AIElementLocator
 from .self_healing import SelfHealing
 
+
 class PlaywrightEngine:
-    """Thin synchronous Playwright adapter used by the test runner."""
-    def __init__(self,browser_name="chromium",headless=True,timeout=30000,ai_provider="none",ai_model="gpt-4o-mini",self_healing=True,healing_confidence=0.70,artifact_dir="reports"):
-        self.browser_name=browser_name; self.headless=headless; self.timeout=timeout; self.artifact_dir=Path(artifact_dir); self.ai_locator=AIElementLocator(ai_provider,ai_model); self.self_healing=SelfHealing(ai_provider,ai_model,healing_confidence) if self_healing else None; self.playwright=None; self.browser=None; self.context=None; self.page=None; self.console_errors=[]; self.api_errors=[]; self.downloads=[]; self.uploads=[]; self.healed_selectors=[]; self.dialogs=[]
+    """Thin synchronous Playwright adapter with Phase C agentic artifacts and route mocks."""
+    def __init__(self,browser_name="chromium",headless=True,timeout=30000,ai_provider="none",ai_model="gpt-4o-mini",self_healing=True,healing_confidence=0.70,artifact_dir="reports",record_trace=True,record_video=True):
+        self.browser_name=browser_name; self.headless=headless; self.timeout=timeout; self.artifact_dir=Path(artifact_dir); self.ai_locator=AIElementLocator(ai_provider,ai_model); self.self_healing=SelfHealing(ai_provider,ai_model,healing_confidence) if self_healing else None; self.record_trace=record_trace; self.record_video=record_video
+        self.playwright=None; self.browser=None; self.context=None; self.page=None; self.console_errors=[]; self.api_errors=[]; self.downloads=[]; self.uploads=[]; self.healed_selectors=[]; self.dialogs=[]; self.trace_path=None; self.video_path=None; self._trace_started=False
     def start(self):
-        self.playwright=sync_playwright().start(); self.browser=getattr(self.playwright,self.browser_name).launch(headless=self.headless); self.context=self.browser.new_context(accept_downloads=True); self.page=self.context.new_page(); self.page.set_default_timeout(self.timeout); self._attach_listeners()
-    def stop(self):
-        if self.context:self.context.close()
-        if self.browser:self.browser.close()
-        if self.playwright:self.playwright.stop()
+        self.playwright=sync_playwright().start(); self.browser=getattr(self.playwright,self.browser_name).launch(headless=self.headless)
+        video_dir=self.artifact_dir/"videos"; video_dir.mkdir(parents=True,exist_ok=True) if self.record_video else None
+        self.context=self.browser.new_context(accept_downloads=True, record_video_dir=str(video_dir) if self.record_video else None)
+        self.page=self.context.new_page(); self.page.set_default_timeout(self.timeout)
+        if self.record_trace:
+            trace_dir=self.artifact_dir/"traces"; trace_dir.mkdir(parents=True,exist_ok=True); self.context.tracing.start(screenshots=True,snapshots=True,sources=True); self._trace_started=True
+        self._attach_listeners()
+    def stop(self, success: bool = True):
+        page=self.page; context=self.context
+        if context and self._trace_started:
+            try:
+                target=self.artifact_dir/"traces"/"last-trace.zip"; target.parent.mkdir(parents=True,exist_ok=True); context.tracing.stop(path=str(target)); self.trace_path=str(target); self._trace_started=False
+            except Exception: pass
+        if context:
+            try: context.close()
+            except Exception: pass
+        if page and self.record_video:
+            try: self.video_path=str(page.video.path()) if page.video else None
+            except Exception: self.video_path=None
+        if self.browser:
+            try: self.browser.close()
+            except Exception: pass
+        if self.playwright:
+            try: self.playwright.stop()
+            except Exception: pass
         self.page=self.context=self.browser=self.playwright=None
     def _attach_listeners(self):
         assert self.page is not None; self.page.on("console",lambda msg:self.console_errors.append(msg.text) if msg.type=="error" else None); self.page.on("requestfailed",lambda request:self.api_errors.append(f"{request.method} {request.url}: {request.failure}")); self.page.on("dialog",self._handle_dialog)
@@ -41,14 +63,10 @@ class PlaywrightEngine:
         item=dict(cookie)
         if "url" not in item and "domain" not in item:
             parsed=urlparse(self.page.url); item["url"]=f"{parsed.scheme}://{parsed.netloc}/" if parsed.scheme and parsed.netloc else self.page.url
-        try:
-            self.context.add_cookies([item])
+        try:self.context.add_cookies([item])
         except Exception:
-            # Non-HttpOnly cookies can be bootstrapped directly in the current origin.
-            if item.get("httpOnly"):
-                raise
-            name=str(item.get("name","")).replace("\\","\\\\").replace("'","\\'"); value=str(item.get("value","")).replace("\\","\\\\").replace("'","\\'"); path=str(item.get("path","/"))
-            self.page.evaluate("(x)=>document.cookie=x",f"{name}={value}; Path={path}")
+            if item.get("httpOnly"):raise
+            name=str(item.get("name","")).replace("\\","\\\\").replace("'","\\'"); value=str(item.get("value","")).replace("\\","\\\\").replace("'","\\'"); path=str(item.get("path","/")); self.page.evaluate("(x)=>document.cookie=x",f"{name}={value}; Path={path}")
     def _set_local_storage(self,values):
         assert self.page is not None; self.page.evaluate("""(items)=>{for(const [k,v] of Object.entries(items))localStorage.setItem(k,String(v));}""",values)
     def _login(self,value):
@@ -70,8 +88,25 @@ class PlaywrightEngine:
             target=next((p for p in pages if str(value) in p.url),None)
             if target is None:raise ValueError(f"No tab URL matched {value!r}")
         target.bring_to_front(); self.page=target; self.page.set_default_timeout(self.timeout); return target
+    @staticmethod
+    def _mock_handler(spec):
+        def handler(route):
+            if isinstance(spec,dict) and spec.get("abort"):
+                route.abort(str(spec.get("abort"))); return
+            response=spec if isinstance(spec,dict) else {"body":spec}
+            body=response.get("body","")
+            if not isinstance(body,str): body=__import__("json").dumps(body)
+            headers=dict(response.get("headers",{})); content_type=response.get("content_type")
+            if content_type: headers.setdefault("content-type",str(content_type))
+            route.fulfill(status=int(response.get("status",200)),headers=headers,body=body)
+        return handler
+    def _mock_route(self,value):
+        if not isinstance(value,dict) or not value.get("url"):raise ValueError("mock_route requires an object with 'url'")
+        assert self.context is not None
+        self.context.route(str(value["url"]),self._mock_handler(value.get("response",{})))
     def run_step(self,step):
         assert self.page is not None; action=step.action.lower().strip(); selector=step.selector; description=getattr(step,"description","") or ""; value=step.value; value_text="" if value is None else str(value); timeout=getattr(step,"timeout",self.timeout)
+        if action in {"mock_route","route_mock","stub_route"}:self._mock_route(value); return
         if action in {"evaluate","javascript","js"}:
             if not value_text.strip():raise ValueError("Evaluate step requires JavaScript in 'value'.")
             return self.page.evaluate(value_text)

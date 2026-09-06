@@ -43,6 +43,8 @@ class Validation:
     file_type: Optional[str] = None
     file_text_contains: Optional[str] = None
     file_pattern: Optional[str] = None
+    baseline_path: Optional[str] = None
+    pixel_threshold: float = 0.0
     timeout: int = 5000
     min_confidence: Optional[float] = None
 
@@ -94,6 +96,8 @@ class TestResult:
     api_errors: List[str] = field(default_factory=list)
     healed_selectors: List[Dict[str, Any]] = field(default_factory=list)
     failure_analysis: Optional[Dict[str, Any]] = None
+    trace: Optional[str] = None
+    video: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

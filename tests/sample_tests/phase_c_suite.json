@@ -1,0 +1,29 @@
+{
+  "test_suite": "Phase C Agentic Capabilities",
+  "tests": [
+    {
+      "id": "C-001",
+      "name": "Mock API response and validate UI",
+      "url": "/api-demo",
+      "steps": [
+        {"action": "mock_route", "value": {"url": "**/api/echo", "response": {"status": 200, "content_type": "application/json", "body": {"success": true, "message": "mocked response", "received": {"message": "mocked"}}}}},
+        {"action": "type", "selector": "#message", "value": "mocked"},
+        {"action": "click", "selector": "#send"}
+      ],
+      "validations": [
+        {"type": "text_contains", "selector": "#echo-result", "expected": "mocked response"}
+      ],
+      "error_checks": ["console_errors", "api_errors"]
+    },
+    {
+      "id": "C-002",
+      "name": "Visual regression baseline",
+      "url": "/",
+      "steps": [],
+      "validations": [
+        {"type": "visual_regression", "baseline_path": "tests/baselines/demo_home.png", "pixel_threshold": 0.0001}
+      ],
+      "error_checks": ["console_errors"]
+    }
+  ]
+}
