@@ -177,6 +177,9 @@ class TestJSONReporter:
 # PDF reporter
 # ---------------------------------------------------------------------------
 
+reportlab = pytest.importorskip("reportlab", reason="reportlab not installed — pip install 'reportlab>=4.0'")
+
+
 class TestPDFReporter:
     def test_creates_pdf_file(self, tmpdir):
         path = write_pdf_report([_result()], tmpdir, suite_name="PDF Test")
