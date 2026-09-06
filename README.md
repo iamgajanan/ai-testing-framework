@@ -1,38 +1,70 @@
 # Universal AI Testing Framework
 
-A generic Python + Playwright framework for testing arbitrary web applications from **JSON, Markdown, CSV, or XLSX** test definitions. It combines deterministic browser assertions with optional OpenAI semantic validation, AI element location, self-healing selectors, diagnostics, reporting, parallel execution, test generation, advanced API assertions, and file validation.
+A generic Python + Playwright framework for testing arbitrary web applications from **JSON, Markdown, CSV, or XLSX** test definitions. It combines deterministic browser assertions with optional OpenAI semantic validation, AI element location, self-healing selectors, diagnostics, reporting, parallel execution, test generation, advanced API assertions, file validation, and Phase B real-world browser workflows.
 
 ## What is implemented
 
 - Playwright automation: Chromium, Firefox, WebKit
 - Actions: click, type/fill, select, check/uncheck, hover, press, wait, wait-for-load-state, wait-for-response, upload, download
+- Phase B browser workflows: cookie/session injection, localStorage bootstrap, reusable login-form action, alert/dialog accept/dismiss, popup tabs, tab switching and tab closing
 - AI semantic validation with local fallback when no API key is configured
 - AI element locator from natural-language descriptions
 - Self-healing selectors with confidence and healing history
-- Deterministic validators: regex, element presence, text, URL, table
+- Deterministic validators: regex, element presence, text, URL, table, attribute, value, state and count
 - API assertions against **real browser network traffic**
-  - URL, method, status
-  - request/response headers
-  - request/response bodies
-  - JSON path
-  - lightweight JSON Schema validation
-  - response-body substring
-  - response-time limit
 - File upload/download validation
-  - existence, filename, extension, MIME, size
-  - text/regex content
-  - JSON structure/path
-  - CSV/XLSX columns
-  - PDF structure/header
-- HTML, JSON and PDF reports
-- Screenshots on failures
-- Console/network error capture
+- HTML, JSON and PDF reports with step execution trace and flaky-test history
+- Screenshots on failures and console/network diagnostics
 - Failure analysis with heuristic or OpenAI diagnosis
 - AI-assisted test generation from a live URL
+- Phase B same-origin multi-page discovery for generated suites (`--max-pages N`)
 - Confidence thresholds for AI assertions
 - Parallel isolated browser workers
-- Run history and flaky-test detection
 - GitHub Actions CI with Python 3.10/3.11/3.12 × Chromium/Firefox/WebKit
+
+## Phase B usage
+
+Session bootstrap can be defined directly in JSON:
+
+```json
+{"action":"set_cookie","value":{"name":"session","value":"demo-session","path":"/"}}
+{"action":"set_local_storage","value":{"role":"user"}}
+```
+
+A reusable login action accepts `username_selector`, `password_selector`, `submit_selector`, credentials, and an optional `success_url` to synchronize navigation:
+
+```json
+{"action":"login","value":{"username_selector":"#username","password_selector":"#password","submit_selector":"#login","username":"demo","password":"secret","success_url":"**/protected"}}
+```
+
+Dialogs can be configured before the triggering action:
+
+```json
+{"action":"accept_dialog"}
+{"action":"click","selector":"#alert"}
+```
+
+Popup workflows use an explicit popup action:
+
+```json
+{"action":"open_popup","selector":"#popup"}
+{"action":"switch_tab","value":"last"}
+```
+
+The included Phase B regression suite is `tests/sample_tests/phase_b_suite.json`.
+
+## Multi-page test generation
+
+Generation remains single-page by default. Discover same-origin links with:
+
+```bash
+ai-test generate \
+  --url http://127.0.0.1:8000 \
+  --output tests/generated_suite.json \
+  --max-pages 5
+```
+
+The crawler stays on the starting origin, removes URL fragments, skips download links, caps discovery at 50 pages, and feeds each observed page independently into the existing heuristic or OpenAI generator. Generated test IDs are made unique across pages.
 
 ## Installation
 
@@ -86,11 +118,12 @@ Reports are written to `reports/` by default.
 ai-test --help
 ai-test --file tests/sample_tests/test_suite.json
 ai-test run --file tests/sample_tests/test_suite.json
-ai-test --file suite.json --test TC-001
+ai-test --file tests/sample_tests/test_suite.json --test TC-001
 ai-test --file suite.json --workers 3
 ai-test --file suite.json --format html json
 ai-test --file suite.json --format all
 ai-test generate --url http://127.0.0.1:8000 --output tests/generated_suite.json
+ai-test generate --url http://127.0.0.1:8000 --output tests/generated_suite.json --max-pages 5
 ```
 
 `ai-test --file ...` remains supported for backward compatibility.
@@ -124,89 +157,6 @@ JSON is the canonical format. Example:
 
 Markdown, CSV and XLSX are also supported. CSV/XLSX group rows by `TestID` and use one row per action/validation.
 
-## AI semantic validation
-
-```json
-{
-  "type": "ai_semantic",
-  "expected": "The page confirms the search was successful",
-  "prompt": "Judge whether the response semantically confirms a successful search.",
-  "min_confidence": 0.85
-}
-```
-
-If `min_confidence` is set, an AI PASS below that threshold becomes a FAIL.
-
-## AI element location
-
-A step can use a natural-language description instead of a CSS selector:
-
-```json
-{"action": "click", "description": "the forgot password link"}
-```
-
-The framework tries deterministic selectors first and can use the configured AI provider when enabled.
-
-## Self-healing selectors
-
-For normal selector-based actions, a failed selector can be recovered using the page DOM and a heuristic/AI match. Successful recoveries are recorded in `healed_selectors` and shown in reports.
-
-## Advanced API assertions
-
-API validations inspect browser-generated network traffic; they do not create a separate HTTP client request.
-
-```json
-{
-  "type": "api_response",
-  "api_url": "/api/echo",
-  "api_method": "POST",
-  "api_status": 200,
-  "api_request_headers": {"X-Test-Header": "framework"},
-  "api_request_body": {"message": "hello"},
-  "api_response_headers": {"X-Demo-Response": "echo"},
-  "api_response_body": {"success": true, "message": "hello", "received": {"message": "hello"}},
-  "api_json_schema": {
-    "type": "object",
-    "required": ["success", "message"],
-    "properties": {"success": {"type": "boolean"}}
-  },
-  "api_response_time_ms": 2000
-}
-```
-
-Existing `json_path`, `expected`, and `body_contains` assertions remain supported. JSON array paths such as `results.0` work as well.
-
-## File upload/download validation
-
-Upload:
-
-```json
-{
-  "steps": [
-    {"action": "upload", "selector": "#file", "value": "fixtures/sample.csv"}
-  ],
-  "validations": [
-    {"type": "upload_validation", "file_path": "fixtures/sample.csv", "file_type": "csv",
-     "expected_columns": ["First Name", "Last Name", "Country"]}
-  ]
-}
-```
-
-Download:
-
-```json
-{
-  "steps": [{"action": "download", "selector": "#download"}],
-  "validations": [
-    {"type": "download_validation", "expected_filename": "sample.csv",
-     "expected_extension": ".csv", "expected_mime": "text/csv",
-     "expected_columns": ["First Name", "Last Name", "Country"]}
-  ]
-}
-```
-
-The download validator automatically uses the most recently captured download when `file_path` is omitted.
-
 ## Reports and diagnostics
 
 - `reports/test_report.html` — interactive self-contained report
@@ -228,39 +178,21 @@ Each worker gets its own Playwright engine/browser. Results are restored to the 
 
 ## Configuration
 
-`config.yaml` supports browser, timeout, AI, reports, screenshots and parallel workers. Example:
-
-```yaml
-browser: chromium
-headless: true
-timeout: 30000
-ai:
-  provider: none
-  model: gpt-4o-mini
-  analyze_failures: true
-report:
-  output_dir: reports
-  html: true
-  json: true
-  pdf: false
-  formats: [html, json]
-parallel:
-  workers: 1
-```
+`config.yaml` supports browser, timeout, AI, reports, screenshots and parallel workers.
 
 ## CI/CD
 
-GitHub Actions runs unit tests and browser E2E coverage across Python 3.10–3.12 and Chromium/Firefox/WebKit. It covers the core suite, AI locator, self-healing, parallel execution, advanced API/file assertions, and deterministic test generation. Reports are uploaded as workflow artifacts.
+GitHub Actions runs unit tests and browser E2E coverage across Python 3.10–3.12 and Chromium/Firefox/WebKit. It covers the core suite, AI locator, self-healing, parallel execution, advanced API/file assertions, **Phase B auth/session/dialog/tab workflows**, and deterministic **multi-page** test generation. Reports are uploaded as workflow artifacts.
 
-OpenAI is intentionally not required in CI; the deterministic fallback paths make the suite reproducible without secrets.
+OpenAI is intentionally not required in CI; deterministic fallback paths make the suite reproducible without secrets.
 
 ## Project structure
 
 ```text
 ai-testing-framework/
 ├── src/ai_testing_framework/
-│   ├── ai/                  # failure analysis + test generation
-│   ├── automation/          # Playwright + network interception
+│   ├── ai/                  # failure analysis + test generation/discovery
+│   ├── automation/          # Playwright + network interception + browser workflows
 │   ├── core/                # models, runner, config, parallel execution
 │   ├── parsers/             # MD, JSON, CSV, XLSX
 │   ├── reporters/            # HTML, JSON, PDF, history
@@ -275,6 +207,6 @@ ai-testing-framework/
 
 ## Roadmap / future work
 
-The core framework is implemented through the current Phase 7 scope. Future enhancements can include richer autonomous exploration, visual regression, trace/video artifacts, broader JSON Schema support, authenticated-session management, and an agentic end-to-end test-planning layer.
+The core framework is implemented through the current Phase B scope. Future enhancements can include richer autonomous exploration, visual regression, trace/video artifacts, broader JSON Schema support, and an agentic end-to-end test-planning layer.
 
 License: MIT
