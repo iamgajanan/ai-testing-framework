@@ -23,6 +23,9 @@ class FakeLocator:
         self.enabled = enabled
         self.checked = checked
 
+    def count(self):
+        return 1
+
     def get_attribute(self, name):
         return self.attribute if name == "aria-label" else None
 
