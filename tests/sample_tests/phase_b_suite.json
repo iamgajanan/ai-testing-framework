@@ -1,0 +1,79 @@
+{
+  "test_suite": "Phase B - Real World Auth Discovery",
+  "tests": [
+    {
+      "id": "B-001",
+      "name": "Cookie session injection and protected page",
+      "url": "/auth",
+      "steps": [
+        {"action": "set_cookie", "value": {"name": "session", "value": "demo-session", "path": "/"}},
+        {"action": "evaluate", "value": "location.href = '/protected'; 'navigating'"}
+      ],
+      "validations": [
+        {"type": "element_present", "selector": "#session-status"},
+        {"type": "text_contains", "selector": "body", "expected": "Authenticated session"}
+      ]
+    },
+    {
+      "id": "B-002",
+      "name": "Form login helper",
+      "url": "/auth",
+      "steps": [
+        {"action": "login", "value": {"username_selector": "#username", "password_selector": "#password", "submit_selector": "#login", "username": "demo", "password": "secret", "wait_for_load_state": "domcontentloaded"}}
+      ],
+      "validations": [
+        {"type": "element_present", "selector": "#session-status"},
+        {"type": "text_contains", "selector": "body", "expected": "Protected Area"}
+      ]
+    },
+    {
+      "id": "B-003",
+      "name": "Local storage session bootstrap",
+      "url": "/auth",
+      "steps": [
+        {"action": "set_local_storage", "value": {"role": "user", "phase": "B"}},
+        {"action": "evaluate", "value": "localStorage.getItem('role')"}
+      ],
+      "validations": [
+        {"type": "element_present", "selector": "#login"}
+      ]
+    },
+    {
+      "id": "B-004",
+      "name": "Accept browser dialog",
+      "url": "/",
+      "steps": [
+        {"action": "accept_dialog"},
+        {"action": "click", "selector": "#alert"}
+      ],
+      "validations": [
+        {"type": "element_present", "selector": "#alert"}
+      ]
+    },
+    {
+      "id": "B-005",
+      "name": "Open and switch to popup tab",
+      "url": "/",
+      "steps": [
+        {"action": "click", "selector": "#popup"},
+        {"action": "switch_tab", "value": "last"}
+      ],
+      "validations": [
+        {"type": "text_contains", "selector": "body", "expected": "Popup Page"}
+      ]
+    },
+    {
+      "id": "B-006",
+      "name": "Close popup tab and return",
+      "url": "/",
+      "steps": [
+        {"action": "click", "selector": "#popup"},
+        {"action": "switch_tab", "value": "last"},
+        {"action": "close_tab"}
+      ],
+      "validations": [
+        {"type": "text_contains", "selector": "body", "expected": "AI Testing Demo"}
+      ]
+    }
+  ]
+}
