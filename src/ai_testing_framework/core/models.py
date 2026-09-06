@@ -19,6 +19,7 @@ class Validation:
     prompt: str = ""
     expected: Any = None
     selector: Optional[str] = None
+    attribute: Optional[str] = None
     pattern: Optional[str] = None
     expected_columns: List[str] = field(default_factory=list)
     row_condition: Optional[str] = None
