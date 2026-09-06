@@ -1,10 +1,11 @@
-"""AI-powered test generation — Phase 7."""
+"""AI-powered test generation — Phase 7 + Phase B multi-page discovery."""
 from __future__ import annotations
 
 import json
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urldefrag, urljoin, urlparse
 
 _DOM_EXTRACT_JS = """
 (function() {
@@ -15,7 +16,7 @@ _DOM_EXTRACT_JS = """
         forms: Array.from(document.querySelectorAll('form')).map(f => ({id:f.id||'', action:f.action||'', method:f.method||'get'})),
         inputs: Array.from(document.querySelectorAll('input,textarea,select')).slice(0,20).map(el => ({tag:el.tagName.toLowerCase(),id:el.id||'',name:el.getAttribute('name')||'',type:el.getAttribute('type')||'',placeholder:el.getAttribute('placeholder')||'',label:(document.querySelector('label[for="'+el.id+'"]')||{}).innerText||''})),
         buttons: Array.from(document.querySelectorAll('button,input[type=submit],input[type=button]')).slice(0,10).map(b => ({tag:b.tagName.toLowerCase(),id:b.id||'',text:(b.innerText||b.value||'').trim(),type:b.getAttribute('type')||''})),
-        links: Array.from(document.querySelectorAll('a[href]')).slice(0,10).map(a => ({id:a.id||'',text:a.innerText.trim(),href:a.getAttribute('href')||'',download:a.hasAttribute('download')})),
+        links: Array.from(document.querySelectorAll('a[href]')).slice(0,20).map(a => ({id:a.id||'',text:a.innerText.trim(),href:a.getAttribute('href')||'',download:a.hasAttribute('download')})),
         tables: Array.from(document.querySelectorAll('table')).slice(0,3).map(t => ({id:t.id||'',headers:Array.from(t.querySelectorAll('th')).map(th => th.innerText.trim())}))
     };
 })()
@@ -37,6 +38,7 @@ Rules:
 - Return ONLY JSON using test_suite, tests, id, name, url, steps, validations and error_checks.
 """
 
+
 class TestGenerator:
     """Generate a JSON test suite for a given URL."""
 
@@ -50,31 +52,68 @@ class TestGenerator:
                 from openai import OpenAI
                 self.client = OpenAI(api_key=api_key)
 
-    def generate(self, url: str, output_path: str, browser: str = "chromium", base_url: str = "") -> str:
-        page_info = self._extract_page_info(url, browser, base_url)
-        relative_url = self._relative(url, base_url)
-        suite = self._ai_generate(page_info, relative_url) if self.client is not None else self._heuristic_generate(page_info, relative_url)
-        if self.client is not None:
-            suite = self._sanitize_suite(suite, page_info, relative_url)
+    def generate(self, url: str, output_path: str, browser: str = "chromium", base_url: str = "", max_pages: int = 1) -> str:
+        pages = self._discover_pages(url, browser, base_url, max_pages=max_pages)
+        all_tests: list[dict[str, Any]] = []
+        suite_title = "Generated Suite"
+        for page_info, relative_url in pages:
+            suite_title = suite_title if suite_title != "Generated Suite" else (page_info.get("title") or suite_title)
+            suite = self._ai_generate(page_info, relative_url) if self.client is not None else self._heuristic_generate(page_info, relative_url)
+            if self.client is not None:
+                suite = self._sanitize_suite(suite, page_info, relative_url)
+            for test in suite.get("tests", []):
+                test["id"] = f"GEN-{len(all_tests)+1:03d}"
+                test["url"] = relative_url
+                all_tests.append(test)
+        if not all_tests:
+            raise RuntimeError("No testable pages were discovered")
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(suite, indent=2, ensure_ascii=False), encoding="utf-8")
+        out.write_text(json.dumps({"test_suite": f"{suite_title} — Generated Tests", "tests": all_tests}, indent=2, ensure_ascii=False), encoding="utf-8")
         return str(out.resolve())
 
-    def _extract_page_info(self, url: str, browser: str, base_url: str) -> dict[str, Any]:
+    def _discover_pages(self, url: str, browser: str, base_url: str, max_pages: int = 1) -> list[tuple[dict[str, Any], str]]:
         from playwright.sync_api import sync_playwright
+        max_pages = max(1, min(int(max_pages), 50))
         target = f"{base_url.rstrip('/')}/{url.lstrip('/')}" if base_url and url.startswith("/") else url
+        origin = urlparse(target).netloc
+        queue = [target]
+        seen: set[str] = set()
+        discovered: list[tuple[dict[str, Any], str]] = []
         with sync_playwright() as p:
             b = getattr(p, browser).launch(headless=True)
             page = b.new_page()
             try:
-                page.goto(target, wait_until="domcontentloaded", timeout=15000)
-                info = page.evaluate(_DOM_EXTRACT_JS)
-                info["url"] = url
-                info["target_url"] = target
-                return info
+                while queue and len(discovered) < max_pages:
+                    current = queue.pop(0)
+                    current, _ = urldefrag(current)
+                    if current in seen:
+                        continue
+                    seen.add(current)
+                    try:
+                        page.goto(current, wait_until="domcontentloaded", timeout=15000)
+                        info = page.evaluate(_DOM_EXTRACT_JS)
+                    except Exception:
+                        continue
+                    info["url"] = current
+                    info["target_url"] = current
+                    discovered.append((info, self._relative(current, base_url)))
+                    for link in info.get("links", []):
+                        href = str(link.get("href", ""))
+                        if not href or link.get("download"):
+                            continue
+                        child = urldefrag(urljoin(current, href))[0]
+                        parsed = urlparse(child)
+                        if parsed.scheme in {"http", "https"} and parsed.netloc == origin and child not in seen and child not in queue:
+                            queue.append(child)
             finally:
                 b.close()
+        return discovered
+
+    # Backward-compatible single-page extraction helper.
+    def _extract_page_info(self, url: str, browser: str, base_url: str) -> dict[str, Any]:
+        pages = self._discover_pages(url, browser, base_url, max_pages=1)
+        return pages[0][0] if pages else {}
 
     def _ai_generate(self, page_info: dict[str, Any], relative_url: str) -> dict[str, Any]:
         prompt = json.dumps({"url": relative_url, "page_info": page_info}, ensure_ascii=False)
@@ -83,24 +122,14 @@ class TestGenerator:
         if raw.startswith("```"):
             raw = raw.split("\n",1)[-1].rsplit("```",1)[0]
         suite = json.loads(raw)
-
-        # The model may return the schema with test_suite as an object containing
-        # the actual tests. Normalize that common variant to the framework's
-        # canonical top-level {test_suite: str, tests: list} shape.
         test_suite = suite.get("test_suite")
         if isinstance(test_suite, dict):
             nested_tests = test_suite.get("tests")
             if not isinstance(suite.get("tests"), list) or not suite.get("tests"):
                 suite["tests"] = nested_tests if isinstance(nested_tests, list) else []
-            suite["test_suite"] = (
-                test_suite.get("name")
-                or test_suite.get("id")
-                or page_info.get("title")
-                or "Generated Suite"
-            )
+            suite["test_suite"] = test_suite.get("name") or test_suite.get("id") or page_info.get("title") or "Generated Suite"
         else:
             suite.setdefault("test_suite", page_info.get("title") or "Generated Suite")
-
         if not isinstance(suite.get("tests"), list):
             suite["tests"] = []
         return suite
@@ -185,6 +214,7 @@ class TestGenerator:
     @staticmethod
     def _relative(url: str, base_url: str) -> str:
         if not base_url or not url.startswith(base_url):
-            return url
+            parsed = urlparse(url)
+            return parsed.path + (("?" + parsed.query) if parsed.query else "") or "/"
         rel = url[len(base_url):]
         return rel or "/"
