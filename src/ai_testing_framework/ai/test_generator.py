@@ -83,7 +83,24 @@ class TestGenerator:
         if raw.startswith("```"):
             raw = raw.split("\n",1)[-1].rsplit("```",1)[0]
         suite = json.loads(raw)
-        suite.setdefault("test_suite", page_info.get("title") or "Generated Suite")
+
+        # The model may return the schema with test_suite as an object containing
+        # the actual tests. Normalize that common variant to the framework's
+        # canonical top-level {test_suite: str, tests: list} shape.
+        test_suite = suite.get("test_suite")
+        if isinstance(test_suite, dict):
+            nested_tests = test_suite.get("tests")
+            if not isinstance(suite.get("tests"), list) or not suite.get("tests"):
+                suite["tests"] = nested_tests if isinstance(nested_tests, list) else []
+            suite["test_suite"] = (
+                test_suite.get("name")
+                or test_suite.get("id")
+                or page_info.get("title")
+                or "Generated Suite"
+            )
+        else:
+            suite.setdefault("test_suite", page_info.get("title") or "Generated Suite")
+
         if not isinstance(suite.get("tests"), list):
             suite["tests"] = []
         return suite
@@ -149,24 +166,10 @@ class TestGenerator:
             if self._selector(buttons[0]):
                 steps.append({"action":"click","selector":self._selector(buttons[0])})
             tests.append({"id":"GEN-002","name":"Form submission","url":relative_url,"steps":steps,"validations":[],"error_checks":["console_errors"]})
-
-        # Keep table coverage deterministic when a real table is observed.
         for tbl in page_info.get("tables", [])[:1]:
             if tbl.get("headers"):
                 sel = f"#{tbl['id']}" if tbl.get("id") else "table"
-                tests.append({
-                    "id": f"GEN-{len(tests)+1:03d}",
-                    "name": "Table structure validation",
-                    "url": relative_url,
-                    "steps": [{"action":"wait", "selector":sel, "timeout":5000}],
-                    "validations": [{
-                        "type":"table_validation",
-                        "selector":sel,
-                        "expected_columns":tbl["headers"],
-                        "row_condition":"",
-                    }],
-                    "error_checks":[],
-                })
+                tests.append({"id":f"GEN-{len(tests)+1:03d}","name":"Table structure validation","url":relative_url,"steps":[{"action":"wait","selector":sel,"timeout":5000}],"validations":[{"type":"table_validation","selector":sel,"expected_columns":tbl["headers"],"row_condition":""}],"error_checks":[]})
         return {"test_suite":f"{title} — Generated Tests","tests":tests}
 
     @staticmethod
