@@ -149,6 +149,24 @@ class TestGenerator:
             if self._selector(buttons[0]):
                 steps.append({"action":"click","selector":self._selector(buttons[0])})
             tests.append({"id":"GEN-002","name":"Form submission","url":relative_url,"steps":steps,"validations":[],"error_checks":["console_errors"]})
+
+        # Keep table coverage deterministic when a real table is observed.
+        for tbl in page_info.get("tables", [])[:1]:
+            if tbl.get("headers"):
+                sel = f"#{tbl['id']}" if tbl.get("id") else "table"
+                tests.append({
+                    "id": f"GEN-{len(tests)+1:03d}",
+                    "name": "Table structure validation",
+                    "url": relative_url,
+                    "steps": [{"action":"wait", "selector":sel, "timeout":5000}],
+                    "validations": [{
+                        "type":"table_validation",
+                        "selector":sel,
+                        "expected_columns":tbl["headers"],
+                        "row_condition":"",
+                    }],
+                    "error_checks":[],
+                })
         return {"test_suite":f"{title} — Generated Tests","tests":tests}
 
     @staticmethod
