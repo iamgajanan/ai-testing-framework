@@ -47,7 +47,9 @@ class PlaywrightEngine:
         raise ValueError("Step requires either 'selector' or 'description'.")
     def _try_heal(self,selector,description,action_fn,timeout):
         locator=self.page.locator(selector)
-        try:return action_fn(locator)
+        try:
+            if locator.count()==0:raise RuntimeError(f'Selector not found: {selector}')
+            return action_fn(locator)
         except Exception as original:
             if not self.self_healing:raise
             healed_selector=self.self_healing.heal_selector(self.page,selector,description)
