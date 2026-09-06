@@ -68,6 +68,7 @@ class CSVParser:
                 type=validation_type or ("file_validation" if file_path else "ai_semantic"),
                 prompt=validation, expected=self._json(expected),
                 selector=self._value(row, "ValidationSelector") or None,
+                attribute=self._value(row, "Attribute") or None,
                 pattern=self._value(row, "Pattern") or None,
                 row_condition=self._value(row, "RowCondition") or None,
                 expected_columns=[c.strip() for c in self._value(row, "ExpectedColumns").split("|") if c.strip()],
