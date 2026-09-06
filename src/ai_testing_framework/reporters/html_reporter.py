@@ -1,12 +1,4 @@
-"""HTML reporter for the Universal AI Testing Framework — Phase 5.
-
-Produces a single self-contained HTML file with:
-- Summary dashboard (pass rate, total duration, suite name)
-- Per-test cards with: status badge, duration, step trace, validation detail,
-  AI-location events, self-healing table, inline base64 screenshots,
-  console errors, network errors
-- No external CSS/JS dependencies (fully offline-capable)
-"""
+"""Self-contained HTML reporting for test results."""
 from __future__ import annotations
 
 import base64
@@ -15,313 +7,142 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, List
 
-from ..core.models import TestResult
 from ..ai.failure_analyzer import FailureAnalyzer
+from ..core.models import TestResult
+from .history import flaky_tests
 
-# ---------------------------------------------------------------------------
-# CSS (single string, injected into <style>)
-# ---------------------------------------------------------------------------
 
 _CSS = """
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: system-ui, -apple-system, sans-serif;
-  font-size: 14px;
-  background: #f0f2f5;
-  color: #1a1a2e;
-  padding: 32px 20px;
-}
-h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 4px; color: #1a1a2e; }
-h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 12px; }
-h3 { font-size: 0.95rem; font-weight: 600; color: #444; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: 0.04em; }
-.subtitle { color: #666; font-size: 0.85rem; margin-bottom: 28px; }
-.card {
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.08);
-  padding: 20px 24px;
-  margin-bottom: 16px;
-}
-/* Summary dashboard */
-.dashboard { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
-.stat {
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.08);
-  padding: 16px 24px;
-  flex: 1;
-  min-width: 140px;
-  text-align: center;
-}
-.stat .value { font-size: 2rem; font-weight: 700; line-height: 1; }
-.stat .label { font-size: 0.78rem; color: #888; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
-.stat.pass .value { color: #137333; }
-.stat.fail .value { color: #b3261e; }
-.stat.total .value { color: #1a73e8; }
-.stat.dur .value { font-size: 1.5rem; color: #555; }
-/* Pass rate bar */
-.rate-bar-wrap { background: #e8eaed; border-radius: 999px; height: 8px; margin: 8px 0 4px; overflow: hidden; }
-.rate-bar { height: 100%; border-radius: 999px; background: #137333; transition: width .4s; }
-.rate-label { font-size: 0.82rem; color: #555; text-align: right; }
-/* Test card */
-.test-card { border-left: 4px solid #e0e0e0; }
-.test-card.pass { border-left-color: #34a853; }
-.test-card.fail { border-left-color: #ea4335; }
-.test-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.test-id { font-family: monospace; font-size: 0.85rem; background: #f1f3f4; padding: 2px 8px; border-radius: 6px; }
-.test-name { flex: 1; font-weight: 600; font-size: 1rem; }
-.badge {
-  padding: 3px 12px; border-radius: 999px; font-weight: 700; font-size: 0.8rem;
-  white-space: nowrap;
-}
-.badge.pass { background: #e6f4ea; color: #137333; }
-.badge.fail { background: #fce8e6; color: #b3261e; }
-.dur-badge { font-size: 0.78rem; color: #888; }
-/* Sections within a test card */
-.section { margin-top: 14px; padding-top: 14px; border-top: 1px solid #f0f0f0; }
-/* Validations */
-.val-list { list-style: none; }
-.val-list li { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; border-bottom: 1px solid #f8f8f8; font-size: 0.88rem; }
-.val-list li:last-child { border-bottom: none; }
-.val-icon { flex-shrink: 0; font-size: 1rem; }
-.val-type { font-family: monospace; font-size: 0.8rem; background: #f1f3f4; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
-.val-reason { color: #444; flex: 1; }
-.val-conf { font-size: 0.78rem; color: #888; white-space: nowrap; }
-/* Self-healing table */
-.heal-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-.heal-table th { background: #fff8e1; color: #7c5700; font-weight: 600; padding: 6px 10px; text-align: left; border-bottom: 2px solid #ffe082; }
-.heal-table td { padding: 6px 10px; border-bottom: 1px solid #f5f5f5; vertical-align: top; }
-.heal-table tr:last-child td { border-bottom: none; }
-.heal-table code { font-family: monospace; font-size: 0.82rem; background: #f1f3f4; padding: 1px 5px; border-radius: 4px; }
-.conf-pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.76rem; font-weight: 600; }
-.conf-high { background: #e6f4ea; color: #137333; }
-.conf-med  { background: #fff8e1; color: #7c5700; }
-.conf-low  { background: #fce8e6; color: #b3261e; }
-/* Error blocks */
-.error-msg { background: #fce8e6; border-left: 3px solid #ea4335; padding: 8px 12px; border-radius: 0 6px 6px 0; font-size: 0.87rem; color: #b3261e; margin-top: 8px; }
-pre.diag { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; font-size: 0.82rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; }
-/* Screenshot */
-.screenshot { margin-top: 12px; }
-.screenshot summary { cursor: pointer; font-size: 0.85rem; color: #1a73e8; }
-.screenshot img { max-width: 100%; border: 1px solid #e0e0e0; border-radius: 8px; margin-top: 8px; }
-/* Collapsible */
-details > summary { cursor: pointer; user-select: none; }
-details > summary::-webkit-details-marker { display: none; }
-details > summary::before { content: '▶ '; font-size: 0.7em; }
-details[open] > summary::before { content: '▼ '; }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;font-size:14px;background:#f0f2f5;color:#1a1a2e;padding:32px 20px}
+h1{font-size:1.6rem;margin-bottom:4px}.subtitle{color:#666;font-size:.85rem;margin-bottom:28px}
+h2{font-size:1.1rem;margin-bottom:12px}h3{font-size:.9rem;color:#555;margin:16px 0 8px;text-transform:uppercase;letter-spacing:.04em}
+.card,.stat{background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.card{padding:20px 24px;margin-bottom:16px}.dashboard{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:24px}
+.stat{padding:16px 24px;flex:1;min-width:140px;text-align:center}.stat .value{font-size:2rem;font-weight:700}.stat .label{font-size:.75rem;color:#888;text-transform:uppercase}
+.stat.pass .value{color:#137333}.stat.fail .value{color:#b3261e}.stat.total .value{color:#1a73e8}.stat.dur .value{font-size:1.5rem;color:#555}
+.rate-bar-wrap{background:#e8eaed;border-radius:999px;height:8px;margin:8px 0 4px;overflow:hidden}.rate-bar{height:100%;background:#137333;border-radius:999px}.rate-label{font-size:.82rem;color:#555;text-align:right}
+.test-card{border-left:4px solid #e0e0e0}.test-card.pass{border-left-color:#34a853}.test-card.fail{border-left-color:#ea4335}
+.test-header{display:flex;align-items:center;gap:12px;margin-bottom:12px}.test-id,.mono{font-family:monospace;font-size:.82rem;background:#f1f3f4;padding:2px 7px;border-radius:5px}.test-name{flex:1;font-weight:600}.badge{padding:3px 12px;border-radius:999px;font-weight:700;font-size:.8rem}.badge.pass{background:#e6f4ea;color:#137333}.badge.fail{background:#fce8e6;color:#b3261e}.dur-badge{font-size:.78rem;color:#888}
+.section{margin-top:14px;padding-top:14px;border-top:1px solid #f0f0f0}.trace{width:100%;border-collapse:collapse;font-size:.84rem}.trace th{background:#f8f9fa;text-align:left}.trace th,.trace td{padding:7px 8px;border-bottom:1px solid #eee;vertical-align:top}.trace .fail{color:#b3261e;font-weight:600}.trace .pass{color:#137333;font-weight:600}
+.val-list{list-style:none}.val-list li{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #f8f8f8}.val-type{font-family:monospace;font-size:.8rem;background:#f1f3f4;padding:1px 6px;border-radius:4px}.val-reason{flex:1;color:#444}.conf{font-size:.78rem;color:#777;white-space:nowrap}
+.heal-table,.flaky-table{width:100%;border-collapse:collapse;font-size:.84rem}.heal-table th,.flaky-table th{background:#fff8e1}.heal-table th,.heal-table td,.flaky-table th,.flaky-table td{padding:7px 9px;border-bottom:1px solid #eee;text-align:left}
+.error-msg{background:#fce8e6;border-left:3px solid #ea4335;padding:8px 12px;color:#b3261e}.diag{background:#f8f9fa;border:1px solid #e0e0e0;border-radius:8px;padding:12px;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto}
+.screenshot img{max-width:100%;border:1px solid #ddd;border-radius:8px;margin-top:8px}.screenshot summary{cursor:pointer;color:#1a73e8}
 """
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
-def _e(s: str) -> str:
-    return _html.escape(str(s))
+def _e(value) -> str:
+    return _html.escape(str(value))
 
-def _conf_pill(conf: float) -> str:
-    cls = "conf-high" if conf >= 0.80 else ("conf-med" if conf >= 0.60 else "conf-low")
-    return f"<span class='conf-pill {cls}'>{conf:.0%}</span>"
+
+def _conf(value) -> str:
+    try:
+        return f"{float(value):.0%}"
+    except (TypeError, ValueError):
+        return ""
+
 
 def _inline_screenshot(path: str) -> str:
-    """Return an inline base64 <img> tag, or empty string on failure."""
     try:
-        data = Path(path).read_bytes()
-        b64 = base64.b64encode(data).decode()
-        return (
-            "<details class='screenshot'>"
-            "<summary>📷 Failure screenshot</summary>"
-            f"<img src='data:image/png;base64,{b64}' alt='screenshot'/>"
-            "</details>"
-        )
+        data = base64.b64encode(Path(path).read_bytes()).decode()
+        return f"<details class='screenshot'><summary>📷 Failure screenshot</summary><img src='data:image/png;base64,{data}' alt='failure screenshot'></details>"
     except Exception:
-        return f"<p><small>Screenshot: {_e(path)}</small></p>"
+        return f"<small>Screenshot: {_e(path)}</small>"
 
-def _validation_list(validations) -> str:
-    if not validations:
-        return "<p style='color:#888;font-size:.85rem'>No validations recorded.</p>"
-    items = []
-    for v in validations:
-        icon = "✅" if v.passed else "❌"
-        conf = f"<span class='val-conf'>{_conf_pill(v.confidence)}</span>" if v.confidence is not None else ""
-        actual = ""
-        if not v.passed and v.actual is not None:
-            actual = f"<br><span style='color:#888;font-size:.8rem'>Actual: {_e(str(v.actual)[:200])}</span>"
-        items.append(
-            f"<li>"
-            f"<span class='val-icon'>{icon}</span>"
-            f"<span class='val-type'>{_e(v.type)}</span>"
-            f"<span class='val-reason'>{_e(v.reason)}{actual}</span>"
-            f"{conf}"
-            f"</li>"
+
+def _steps(result: TestResult) -> str:
+    if not result.steps:
+        return "<p style='color:#888'>No steps recorded.</p>"
+    rows = []
+    for i, step in enumerate(result.steps, 1):
+        value = "" if step.value is None else _e(step.value)
+        output = "" if step.result is None else _e(step.result)
+        error = f"<br><span class='fail'>{_e(step.error)}</span>" if step.error else ""
+        rows.append(
+            f"<tr><td>{i}</td><td>{_e(step.action)}</td><td>{_e(step.selector or '')}</td>"
+            f"<td>{value}</td><td class='{step.status.lower()}'>{_e(step.status)}</td>"
+            f"<td>{step.duration:.3f}s</td><td>{output}{error}</td></tr>"
         )
-    return f"<ul class='val-list'>{''.join(items)}</ul>"
+    return "<table class='trace'><thead><tr><th>#</th><th>Action</th><th>Selector</th><th>Value</th><th>Status</th><th>Time</th><th>Result/Error</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
 
-def _healing_table(healed: list) -> str:
+
+def _validations(validations) -> str:
+    if not validations:
+        return "<p style='color:#888'>No validations recorded.</p>"
+    rows = []
+    for v in validations:
+        actual = f"<br><small>Actual: {_e(str(v.actual)[:300])}</small>" if v.actual is not None and not v.passed else ""
+        confidence = f"<span class='conf'>{_conf(v.confidence)}</span>" if v.confidence is not None else ""
+        rows.append(f"<li><span>{'✅' if v.passed else '❌'}</span><span class='val-type'>{_e(v.type)}</span><span class='val-reason'>{_e(v.reason)}{actual}</span>{confidence}</li>")
+    return "<ul class='val-list'>" + "".join(rows) + "</ul>"
+
+
+def _healing(healed: list) -> str:
     if not healed:
         return ""
-    rows = []
-    for h in healed:
-        conf = float(h.get("confidence", 0))
-        rows.append(
-            f"<tr>"
-            f"<td><code>{_e(h.get('failed_selector',''))}</code></td>"
-            f"<td><code>{_e(h.get('healed_selector',''))}</code></td>"
-            f"<td style='color:#555'>{_e(h.get('reason',''))}</td>"
-            f"<td>{_conf_pill(conf)}</td>"
-            f"</tr>"
-        )
-    return (
-        "<h3>⚕️ Self-healed selectors</h3>"
-        "<table class='heal-table'>"
-        "<thead><tr><th>Failed selector</th><th>Healed to</th><th>Reason</th><th>Confidence</th></tr></thead>"
-        f"<tbody>{''.join(rows)}</tbody>"
-        "</table>"
-    )
+    rows = [f"<tr><td>{_e(h.get('failed_selector',''))}</td><td>{_e(h.get('healed_selector',''))}</td><td>{_e(h.get('reason',''))}</td><td>{_conf(h.get('confidence',0))}</td></tr>" for h in healed]
+    return "<h3>⚕️ Self-healed selectors</h3><table class='heal-table'><thead><tr><th>Failed</th><th>Healed to</th><th>Reason</th><th>Confidence</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
 
-def _failure_analysis(r: TestResult) -> str:
+
+def _failure(r: TestResult) -> str:
     fa = r.failure_analysis
-    if not fa or fa.get("category") == "none":
+    if not fa or fa.get('category') == 'none':
         return ""
-    cat   = _e(FailureAnalyzer.category_label(fa.get("category", "unknown")))
-    rc    = _e(fa.get("root_cause", ""))
-    expl  = _e(fa.get("explanation", ""))
-    fix   = _e(fa.get("suggested_fix", ""))
-    conf  = float(fa.get("confidence", 0))
-    meth  = _e(fa.get("method", "heuristic"))
-    return (
-        "<h3>🔍 Failure analysis <small style='font-weight:400;font-size:.8em;color:#888'>"
-        f"({meth})</small></h3>"
-        f"<table style='width:100%;border-collapse:collapse;font-size:.87rem'>"
-        f"<tr><td style='padding:4px 8px;width:130px;color:#888;white-space:nowrap'>Category</td>"
-        f"<td style='padding:4px 8px'><strong>{cat}</strong></td></tr>"
-        f"<tr><td style='padding:4px 8px;color:#888'>Root cause</td>"
-        f"<td style='padding:4px 8px'>{rc}</td></tr>"
-        + (f"<tr><td style='padding:4px 8px;color:#888;vertical-align:top'>Explanation</td>"
-           f"<td style='padding:4px 8px'>{expl}</td></tr>" if expl else "")
-        + (f"<tr><td style='padding:4px 8px;color:#888;vertical-align:top'>Suggested fix</td>"
-           f"<td style='padding:4px 8px;color:#137333'>{fix}</td></tr>" if fix else "")
-        + f"<tr><td style='padding:4px 8px;color:#888'>Confidence</td>"
-          f"<td style='padding:4px 8px'>{_conf_pill(conf)}</td></tr>"
-        + "</table>"
-    )
+    return (f"<h3>🔍 Failure analysis <small>({_e(fa.get('method','heuristic'))})</small></h3>"
+            f"<p><strong>{_e(FailureAnalyzer.category_label(fa.get('category','unknown')))}</strong> — {_e(fa.get('root_cause',''))}</p>"
+            f"<p>{_e(fa.get('explanation',''))}</p><p><strong>Suggested fix:</strong> {_e(fa.get('suggested_fix',''))}</p>"
+            f"<p>Confidence: {_conf(fa.get('confidence',0))}</p>")
 
 
-def _error_blocks(r: TestResult) -> str:
-    out = ""
-    if r.error:
-        out += f"<div class='error-msg'>⛔ {_e(r.error)}</div>"
+def _errors(r: TestResult) -> str:
+    out = f"<div class='error-msg'>⛔ {_e(r.error)}</div>" if r.error else ""
     if r.console_errors:
-        joined = _e("\n".join(r.console_errors))
-        out += (
-            "<h3>🖥 Console errors</h3>"
-            f"<pre class='diag'>{joined}</pre>"
-        )
+        out += f"<h3>🖥 Console errors</h3><pre class='diag'>{_e(chr(10).join(r.console_errors))}</pre>"
     if r.api_errors:
-        joined = _e("\n".join(r.api_errors))
-        out += (
-            "<h3>🌐 Network errors</h3>"
-            f"<pre class='diag'>{joined}</pre>"
-        )
+        out += f"<h3>🌐 Network errors</h3><pre class='diag'>{_e(chr(10).join(r.api_errors))}</pre>"
     return out
 
-# ---------------------------------------------------------------------------
-# Public entry point
-# ---------------------------------------------------------------------------
 
-def write_html_report(
-    results: Iterable[TestResult],
-    output_dir: str = "reports",
-    suite_name: str = "",
-    started_at: str = "",
-) -> str:
+def _flaky_section(output_dir: str) -> str:
+    items = flaky_tests(output_dir)
+    if not items:
+        return ""
+    rows = [f"<tr><td>{_e(x['id'])}</td><td>{_e(x['name'])}</td><td>{x['total_runs']}</td><td>{x['pass']}</td><td>{x['fail']}</td><td>{x['flaky_rate']:.1f}%</td></tr>" for x in items]
+    return "<div class='card'><h2>⚠️ Flaky tests</h2><table class='flaky-table'><thead><tr><th>ID</th><th>Name</th><th>Runs</th><th>Pass</th><th>Fail</th><th>Flaky rate</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
+
+
+def write_html_report(results: Iterable[TestResult], output_dir: str = "reports", suite_name: str = "", started_at: str = "") -> str:
     results: List[TestResult] = list(results)
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
+    total = len(results)
+    passed = sum(r.status == 'PASS' for r in results)
+    failed = total - passed
+    duration = sum(r.duration for r in results)
+    rate = passed / total * 100 if total else 0
+    title = _e(suite_name or 'AI Test Report')
+    ts = _e(started_at or datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
 
-    total   = len(results)
-    passed  = sum(r.status == "PASS" for r in results)
-    failed  = total - passed
-    total_dur = sum(r.duration for r in results)
-    rate    = (passed / total * 100) if total else 0
-    ts      = started_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    title   = _e(suite_name) if suite_name else "AI Test Report"
-
-    # --- dashboard ---
-    rate_bar = (
-        f"<div class='rate-bar-wrap'><div class='rate-bar' style='width:{rate:.1f}%'></div></div>"
-        f"<div class='rate-label'>{rate:.1f}% pass rate</div>"
-    )
-    dashboard = (
-        "<div class='dashboard'>"
-        f"<div class='stat total'><div class='value'>{total}</div><div class='label'>Total</div></div>"
-        f"<div class='stat pass'><div class='value'>{passed}</div><div class='label'>Passed</div></div>"
-        f"<div class='stat fail'><div class='value'>{failed}</div><div class='label'>Failed</div></div>"
-        f"<div class='stat dur'><div class='value'>{total_dur:.1f}s</div><div class='label'>Duration</div></div>"
-        "</div>"
-        f"<div class='card' style='padding:14px 20px'>{rate_bar}</div>"
-    )
-
-    # --- test cards ---
     cards = []
     for r in results:
-        status_cls = "pass" if r.status == "PASS" else "fail"
-        badge_txt  = "✅ PASS" if r.status == "PASS" else "❌ FAIL"
-
-        header = (
-            "<div class='test-header'>"
-            f"<span class='test-id'>{_e(r.id)}</span>"
-            f"<span class='test-name'>{_e(r.name)}</span>"
-            f"<span class='badge {status_cls}'>{badge_txt}</span>"
-            f"<span class='dur-badge'>{r.duration:.2f}s</span>"
-            "</div>"
-        )
-
-        val_section = (
-            "<div class='section'>"
-            "<h3>Validations</h3>"
-            + _validation_list(r.validations)
-            + "</div>"
-        )
-
-        fa_section = ""
-        if r.failure_analysis and r.failure_analysis.get("category") != "none":
-            fa_section = f"<div class='section'>{_failure_analysis(r)}</div>"
-
-        heal_section = ""
-        if r.healed_selectors:
-            heal_section = f"<div class='section'>{_healing_table(r.healed_selectors)}</div>"
-
-        screenshot_section = ""
-        if r.screenshot:
-            screenshot_section = f"<div class='section'>{_inline_screenshot(r.screenshot)}</div>"
-
-        diag_section = ""
-        diag_content = _error_blocks(r)
-        if diag_content:
-            diag_section = f"<div class='section'>{diag_content}</div>"
-
+        cls = 'pass' if r.status == 'PASS' else 'fail'
         cards.append(
-            f"<div class='card test-card {status_cls}'>"
-            f"{header}{val_section}{fa_section}{heal_section}{screenshot_section}{diag_section}"
-            "</div>"
+            f"<div class='card test-card {cls}'><div class='test-header'><span class='test-id'>{_e(r.id)}</span><span class='test-name'>{_e(r.name)}</span><span class='badge {cls}'>{'✅ PASS' if cls == 'pass' else '❌ FAIL'}</span><span class='dur-badge'>{r.duration:.2f}s</span></div>"
+            f"<div class='section'><h3>Step execution trace</h3>{_steps(r)}</div>"
+            f"<div class='section'><h3>Validations</h3>{_validations(r.validations)}</div>"
+            f"{('<div class=\'section\'>' + _failure(r) + '</div>') if r.failure_analysis and r.failure_analysis.get('category') != 'none' else ''}"
+            f"{('<div class=\'section\'>' + _healing(r.healed_selectors) + '</div>') if r.healed_selectors else ''}"
+            f"{('<div class=\'section\'>' + _inline_screenshot(r.screenshot) + '</div>') if r.screenshot else ''}"
+            f"{('<div class=\'section\'>' + _errors(r) + '</div>') if (r.error or r.console_errors or r.api_errors) else ''}</div>"
         )
 
-    page = f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title}</title>
-<style>{_CSS}</style>
-</head>
-<body>
-<h1>{title}</h1>
-<p class="subtitle">Generated {_e(ts)}</p>
-{dashboard}
-{''.join(cards)}
-</body>
-</html>"""
-
-    target = out / "test_report.html"
-    target.write_text(page, encoding="utf-8")
+    html = f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{title}</title><style>{_CSS}</style></head><body>
+<h1>{title}</h1><p class='subtitle'>Generated {ts}</p>
+<div class='dashboard'><div class='stat total'><div class='value'>{total}</div><div class='label'>Total</div></div><div class='stat pass'><div class='value'>{passed}</div><div class='label'>Passed</div></div><div class='stat fail'><div class='value'>{failed}</div><div class='label'>Failed</div></div><div class='stat dur'><div class='value'>{duration:.1f}s</div><div class='label'>Duration</div></div></div>
+<div class='card'><div class='rate-bar-wrap'><div class='rate-bar' style='width:{rate:.1f}%'></div></div><div class='rate-label'>{rate:.1f}% pass rate</div></div>
+{_flaky_section(output_dir)}{''.join(cards)}
+</body></html>"""
+    target = out / 'test_report.html'
+    target.write_text(html, encoding='utf-8')
     return str(target)
