@@ -35,6 +35,11 @@ class JSONParser:
     def _validation(validation: Dict[str, Any]) -> Dict[str, Any]:
         allowed = {
             "type", "prompt", "expected", "selector", "pattern", "expected_columns",
-            "row_condition", "api_url", "api_method", "api_status", "json_path", "body_contains", "timeout", "min_confidence",
+            "row_condition", "api_url", "api_method", "api_status",
+            "api_request_headers", "api_response_headers", "api_request_body",
+            "api_response_body", "api_json_schema", "api_response_time_ms",
+            "json_path", "body_contains", "file_path", "expected_filename",
+            "expected_extension", "expected_mime", "min_size", "max_size",
+            "file_type", "file_text_contains", "file_pattern", "timeout", "min_confidence",
         }
         return {k: v for k, v in validation.items() if k in allowed}
