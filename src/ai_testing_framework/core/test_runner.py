@@ -151,14 +151,14 @@ def _validate(ai: AIValidator, page, validation, response: str, interceptor: Opt
         passed, reason = validate_table(page, validation.selector, validation.expected_columns, validation.row_condition)
         return ValidationResult(kind, passed, reason)
     if kind in {"element_attribute", "attribute"}:
-        attribute = str(validation.prompt or "")
+        attribute = validation.attribute or validation.prompt
         if not attribute:
-            raise ValueError("element_attribute validation requires 'prompt' to contain the attribute name")
+            raise ValueError("element_attribute validation requires 'attribute'")
         passed, reason = validate_element_attribute(page, validation.selector or "", attribute, validation.expected)
         return ValidationResult(kind, passed, reason)
     if kind == "element_value":
         passed, reason = validate_element_value(page, validation.selector or "", validation.expected)
-        return ValidationResult(kind, passed, reason, actual=validation.expected)
+        return ValidationResult(kind, passed, reason)
     if kind in {"element_visible", "element_hidden", "element_enabled", "element_disabled", "element_checked", "element_unchecked", "element_editable"}:
         state = kind.removeprefix("element_")
         passed, reason = validate_element_state(page, validation.selector or "", state, True)
