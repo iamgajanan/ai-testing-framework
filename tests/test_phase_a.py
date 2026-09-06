@@ -23,6 +23,10 @@ class FakeLocator:
         self.enabled = enabled
         self.checked = checked
 
+    @property
+    def first(self):
+        return self
+
     def count(self):
         return 1
 
