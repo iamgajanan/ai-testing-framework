@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from ai_testing_framework.automation.playwright_engine import PlaywrightEngine
+from ai_testing_framework.ai.test_generator import TestGenerator
 from ai_testing_framework.core.models import Step, StepResult, TestResult
 from ai_testing_framework.parsers.md_parser import MarkdownParser
 from ai_testing_framework.reporters.history import append_history
@@ -90,6 +91,23 @@ def test_markdown_structured_validation_block(tmp_path):
         "element_present", "element_attribute", "element_value", "element_count", "element_enabled"
     ]
     assert suite.tests[0].steps[0].action == "evaluate"
+
+
+def test_heuristic_generator_does_not_submit_password_forms():
+    page_info = {
+        "title": "Login Demo",
+        "inputs": [
+            {"tag": "input", "id": "username", "type": "text"},
+            {"tag": "input", "id": "password", "type": "password"},
+        ],
+        "buttons": [{"tag": "button", "id": "login", "text": "Login", "type": "submit"}],
+        "headings": ["Login Demo"],
+        "links": [],
+        "tables": [],
+    }
+    suite = TestGenerator(provider="none")._heuristic_generate(page_info, "/auth")
+    assert [test["name"] for test in suite["tests"]] == ["Page loads with expected elements"]
+    assert all(step["action"] != "click" for test in suite["tests"] for step in test["steps"])
 
 
 def test_html_report_contains_step_trace_and_flaky_section(tmp_path):
