@@ -1,7 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlparse
-from playwright.sync_api import Playwright, sync_playwright
+from playwright.sync_api import sync_playwright
 from .element_locator import AIElementLocator
 from .self_healing import SelfHealing
 
@@ -40,11 +40,15 @@ class PlaywrightEngine:
         assert self.context is not None and self.page is not None
         item=dict(cookie)
         if "url" not in item and "domain" not in item:
-            parsed=urlparse(self.page.url)
-            origin=f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else self.page.url
-            item["url"]=origin
-        if "domain" in item and "path" not in item:item["path"]="/"
-        self.context.add_cookies([item])
+            parsed=urlparse(self.page.url); item["url"]=f"{parsed.scheme}://{parsed.netloc}/" if parsed.scheme and parsed.netloc else self.page.url
+        try:
+            self.context.add_cookies([item])
+        except Exception:
+            # Non-HttpOnly cookies can be bootstrapped directly in the current origin.
+            if item.get("httpOnly"):
+                raise
+            name=str(item.get("name","")).replace("\\","\\\\").replace("'","\\'"); value=str(item.get("value","")).replace("\\","\\\\").replace("'","\\'"); path=str(item.get("path","/"))
+            self.page.evaluate("(x)=>document.cookie=x",f"{name}={value}; Path={path}")
     def _set_local_storage(self,values):
         assert self.page is not None; self.page.evaluate("""(items)=>{for(const [k,v] of Object.entries(items))localStorage.setItem(k,String(v));}""",values)
     def _login(self,value):
