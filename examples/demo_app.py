@@ -10,7 +10,7 @@ SEARCH_HTML = '''<!doctype html>
   <button id="submit" type="submit">Search</button>
 </form>
 <div id="result" class="result-container"></div>
-<p><a id="download" href="/download/sample.csv">Download sample CSV</a></p>
+<p><a id="download" href="/download/sample.csv" download="sample.csv">Download sample CSV</a></p>
 <form id="upload-form" enctype="multipart/form-data" method="post" action="/upload">
   <input id="file" name="file" type="file">
   <button id="upload" type="submit">Upload</button>
