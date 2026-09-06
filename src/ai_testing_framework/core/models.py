@@ -28,6 +28,7 @@ class Validation:
     json_path: Optional[str] = None
     body_contains: Optional[str] = None
     timeout: int = 5000
+    min_confidence: Optional[float] = None
 
 
 @dataclass
@@ -63,6 +64,7 @@ class TestResult:
     console_errors: List[str] = field(default_factory=list)
     api_errors: List[str] = field(default_factory=list)
     healed_selectors: List[Dict[str, Any]] = field(default_factory=list)
+    failure_analysis: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

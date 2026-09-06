@@ -3,18 +3,19 @@ headless: true
 timeout: 30000
 
 ai:
-  provider: none   # openai | none
+  provider: none          # openai | none
   model: gpt-4o-mini
+  analyze_failures: true  # run failure analysis on FAIL results
 
 report:
   output_dir: reports
   html: true
   json: true
-  pdf: false        # set true or use --format pdf to emit PDF
+  pdf: false              # set true or use --format pdf
   formats: [html, json]
 
 screenshots:
   on_failure: true
 
 parallel:
-  workers: 1        # >1 runs tests concurrently (each gets its own browser)
+  workers: 1              # >1 runs tests concurrently

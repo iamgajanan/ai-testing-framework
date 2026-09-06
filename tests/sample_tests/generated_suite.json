@@ -1,0 +1,49 @@
+{
+  "test_suite": "Generated Suite — Generated Tests",
+  "tests": [
+    {
+      "id": "GEN-001",
+      "name": "Page loads with expected elements",
+      "url": "http://127.0.0.1:8000",
+      "steps": [],
+      "validations": [
+        {
+          "type": "element_present",
+          "selector": "#query"
+        },
+        {
+          "type": "element_present",
+          "selector": "#submit"
+        },
+        {
+          "type": "text_contains",
+          "selector": "body",
+          "expected": "AI Testing Demo"
+        }
+      ],
+      "error_checks": [
+        "console_errors"
+      ]
+    },
+    {
+      "id": "GEN-002",
+      "name": "Form submission",
+      "url": "http://127.0.0.1:8000",
+      "steps": [
+        {
+          "action": "type",
+          "selector": "#query",
+          "value": "test"
+        },
+        {
+          "action": "click",
+          "selector": "#submit"
+        }
+      ],
+      "validations": [],
+      "error_checks": [
+        "console_errors"
+      ]
+    }
+  ]
+}

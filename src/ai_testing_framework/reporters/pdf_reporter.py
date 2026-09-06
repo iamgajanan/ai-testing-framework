@@ -211,6 +211,24 @@ def write_pdf_report(
             )
             story.append(Spacer(1, 6))
 
+        # Failure analysis
+        if r.failure_analysis and r.failure_analysis.get("category") != "none":
+            from ..ai.failure_analyzer import FailureAnalyzer
+            fa = r.failure_analysis
+            story.append(P("Failure Analysis", "h3"))
+            fa_data = [["Field", "Detail"]]
+            fa_data.append(["Category",      FailureAnalyzer.category_label(fa.get("category","unknown"))])
+            fa_data.append(["Root cause",    str(fa.get("root_cause",""))[:120]])
+            if fa.get("explanation"):
+                fa_data.append(["Explanation", str(fa["explanation"])[:160]])
+            if fa.get("suggested_fix"):
+                fa_data.append(["Suggested fix", str(fa["suggested_fix"])[:160]])
+            fa_data.append(["Confidence",    f"{float(fa.get('confidence',0)):.0%}"])
+            fa_data.append(["Method",        str(fa.get("method","heuristic"))])
+            story.append(_table(fa_data, [W * 0.25, W * 0.75],
+                [("BACKGROUND", (0,0), (-1,0), colors.HexColor("#fce8e6"))]))
+            story.append(Spacer(1, 6))
+
         # Console / network errors
         if r.console_errors:
             story.append(P("Console errors", "h3"))

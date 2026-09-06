@@ -8,35 +8,58 @@ from .core.test_runner import TestRunner
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Universal AI-powered web test runner")
-    parser.add_argument("--file",     required=True,  help="Path to .md, .json, .csv, or .xlsx test suite")
-    parser.add_argument("--browser",  default="chromium", choices=["chromium", "firefox", "webkit"])
-    parser.add_argument("--test",     dest="test_id", help="Run only a specific test ID")
-    parser.add_argument("--base-url", default="",     help="Base URL for relative test URLs")
-    parser.add_argument("--output",   default="reports", help="Report output directory")
-    parser.add_argument("--config",   default=None,   help="YAML configuration file")
-    parser.add_argument("--ai-provider", choices=["openai", "none"], default=None)
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=None,
-        metavar="N",
-        help="Parallel browser workers (default: 1 = sequential)",
+    parser = argparse.ArgumentParser(
+        description="Universal AI-powered web test runner",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument(
+    sub = parser.add_subparsers(dest="command")
+
+    # ------------------------------------------------------------------ run
+    run_p = sub.add_parser("run", help="Run a test suite (default when no subcommand given)")
+    _add_run_args(run_p)
+
+    # ------------------------------------------------------------------ generate
+    gen_p = sub.add_parser("generate", help="Generate a test suite from a live URL")
+    gen_p.add_argument("--url",      required=True, help="URL to generate tests for")
+    gen_p.add_argument("--output",   default="tests/generated_suite.json",
+                       help="Output path for generated JSON suite")
+    gen_p.add_argument("--browser",  default="chromium",
+                       choices=["chromium", "firefox", "webkit"])
+    gen_p.add_argument("--base-url", default="", help="Base URL (stripped from relative paths)")
+    gen_p.add_argument("--ai-provider", choices=["openai", "none"], default="none")
+    gen_p.add_argument("--config",   default=None)
+
+    # ------------------------------------------------------------------ top-level (backward compat)
+    # Allow `ai-test --file x.json` without the `run` subcommand
+    _add_run_args(parser)
+
+    return parser
+
+
+def _add_run_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--file",     default=None, help="Path to test suite file")
+    p.add_argument("--browser",  default="chromium",
+                   choices=["chromium", "firefox", "webkit"])
+    p.add_argument("--test",     dest="test_id", default=None,
+                   help="Run only a specific test ID")
+    p.add_argument("--base-url", default="", help="Base URL for relative test URLs")
+    p.add_argument("--output",   default="reports", help="Report output directory")
+    p.add_argument("--config",   default=None, help="YAML configuration file")
+    p.add_argument("--ai-provider", choices=["openai", "none"], default=None)
+    p.add_argument("--workers",  type=int, default=None, metavar="N",
+                   help="Parallel browser workers (default: 1 = sequential)")
+    p.add_argument(
         "--format",
         dest="formats",
         nargs="+",
         choices=["html", "json", "pdf", "all"],
         default=None,
         metavar="FORMAT",
-        help="Report formats to emit: html json pdf all  (default: html json)",
+        help="Report formats: html json pdf all  (default: html json)",
     )
-    return parser
 
 
 def _write_github_summary(results, output_dir: str, workers: int = 1) -> None:
-    """Write a Markdown step summary to $GITHUB_STEP_SUMMARY if running in CI."""
     summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
     if not summary_file:
         return
@@ -63,6 +86,16 @@ def _write_github_summary(results, output_dir: str, workers: int = 1) -> None:
         icon = "✅" if r.status == "PASS" else "❌"
         lines.append(f"| `{r.id}` | {r.name} | {icon} {r.status} | {r.duration:.2f}s |")
 
+    # Failure analysis summary
+    failed_results = [r for r in results if r.status == "FAIL" and r.failure_analysis]
+    if failed_results:
+        lines += ["", "### 🔍 Failure Analysis", ""]
+        for r in failed_results:
+            fa = r.failure_analysis
+            lines.append(
+                f"- **{r.id}** [{fa.get('category','?')}]: {fa.get('root_cause','')}"
+            )
+
     healed = [r for r in results if r.healed_selectors]
     if healed:
         lines += ["", "### ⚕️ Self-healed selectors", ""]
@@ -80,16 +113,14 @@ def _write_github_summary(results, output_dir: str, workers: int = 1) -> None:
         pass
 
 
-def main() -> int:
-    args = build_parser().parse_args()
+def _cmd_run(args) -> int:
+    if not args.file:
+        print("ERROR: --file is required for the run command.", file=sys.stderr)
+        return 2
 
-    # Resolve --format all → all three formats
     formats = None
     if args.formats:
-        if "all" in args.formats:
-            formats = ["html", "json", "pdf"]
-        else:
-            formats = args.formats
+        formats = ["html", "json", "pdf"] if "all" in args.formats else args.formats
 
     runner = TestRunner(config=args.config, base_url=args.base_url)
     if args.ai_provider:
@@ -115,9 +146,50 @@ def main() -> int:
     print(f"Tests: {len(results)} | Passed: {passed} | Failed: {failed}{mode}")
     print(f"HTML report: {args.output}/test_report.html")
 
-    _write_github_summary(results, args.output, workers=w)
+    # Print failure analysis summaries to stdout
+    for r in results:
+        if r.status == "FAIL" and r.failure_analysis:
+            fa = r.failure_analysis
+            cat = fa.get("category", "unknown")
+            rc  = fa.get("root_cause", "")
+            fix = fa.get("suggested_fix", "")
+            print(f"\n  ❌ {r.id} [{cat}]: {rc}")
+            if fix:
+                print(f"     💡 {fix}")
 
+    _write_github_summary(results, args.output, workers=w)
     return 0 if failed == 0 else 1
+
+
+def _cmd_generate(args) -> int:
+    from .ai.test_generator import TestGenerator
+    provider = args.ai_provider or "none"
+    generator = TestGenerator(provider=provider)
+    print(f"Extracting page structure from {args.url} ...")
+    try:
+        path = generator.generate(
+            url=args.url,
+            output_path=args.output,
+            browser=args.browser,
+            base_url=getattr(args, "base_url", ""),
+        )
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(f"✅ Generated test suite written to: {path}")
+    print(f"   Run with: ai-test --file {path} --base-url <your-base-url>")
+    return 0
+
+
+def main() -> int:
+    parser = build_parser()
+    args   = parser.parse_args()
+
+    if args.command == "generate":
+        return _cmd_generate(args)
+
+    # "run" subcommand or top-level invocation (backward compat)
+    return _cmd_run(args)
 
 
 if __name__ == "__main__":

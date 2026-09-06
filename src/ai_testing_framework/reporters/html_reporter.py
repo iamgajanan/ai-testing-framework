@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Iterable, List
 
 from ..core.models import TestResult
+from ..ai.failure_analyzer import FailureAnalyzer
 
 # ---------------------------------------------------------------------------
 # CSS (single string, injected into <style>)
@@ -177,6 +178,34 @@ def _healing_table(healed: list) -> str:
         "</table>"
     )
 
+def _failure_analysis(r: TestResult) -> str:
+    fa = r.failure_analysis
+    if not fa or fa.get("category") == "none":
+        return ""
+    cat   = _e(FailureAnalyzer.category_label(fa.get("category", "unknown")))
+    rc    = _e(fa.get("root_cause", ""))
+    expl  = _e(fa.get("explanation", ""))
+    fix   = _e(fa.get("suggested_fix", ""))
+    conf  = float(fa.get("confidence", 0))
+    meth  = _e(fa.get("method", "heuristic"))
+    return (
+        "<h3>🔍 Failure analysis <small style='font-weight:400;font-size:.8em;color:#888'>"
+        f"({meth})</small></h3>"
+        f"<table style='width:100%;border-collapse:collapse;font-size:.87rem'>"
+        f"<tr><td style='padding:4px 8px;width:130px;color:#888;white-space:nowrap'>Category</td>"
+        f"<td style='padding:4px 8px'><strong>{cat}</strong></td></tr>"
+        f"<tr><td style='padding:4px 8px;color:#888'>Root cause</td>"
+        f"<td style='padding:4px 8px'>{rc}</td></tr>"
+        + (f"<tr><td style='padding:4px 8px;color:#888;vertical-align:top'>Explanation</td>"
+           f"<td style='padding:4px 8px'>{expl}</td></tr>" if expl else "")
+        + (f"<tr><td style='padding:4px 8px;color:#888;vertical-align:top'>Suggested fix</td>"
+           f"<td style='padding:4px 8px;color:#137333'>{fix}</td></tr>" if fix else "")
+        + f"<tr><td style='padding:4px 8px;color:#888'>Confidence</td>"
+          f"<td style='padding:4px 8px'>{_conf_pill(conf)}</td></tr>"
+        + "</table>"
+    )
+
+
 def _error_blocks(r: TestResult) -> str:
     out = ""
     if r.error:
@@ -254,6 +283,10 @@ def write_html_report(
             + "</div>"
         )
 
+        fa_section = ""
+        if r.failure_analysis and r.failure_analysis.get("category") != "none":
+            fa_section = f"<div class='section'>{_failure_analysis(r)}</div>"
+
         heal_section = ""
         if r.healed_selectors:
             heal_section = f"<div class='section'>{_healing_table(r.healed_selectors)}</div>"
@@ -269,7 +302,7 @@ def write_html_report(
 
         cards.append(
             f"<div class='card test-card {status_cls}'>"
-            f"{header}{val_section}{heal_section}{screenshot_section}{diag_section}"
+            f"{header}{val_section}{fa_section}{heal_section}{screenshot_section}{diag_section}"
             "</div>"
         )
 

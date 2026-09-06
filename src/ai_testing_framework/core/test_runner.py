@@ -29,6 +29,7 @@ from ..validators.ui_validator import (
     validate_text_contains,
     validate_url_contains,
 )
+from ..ai.failure_analyzer import FailureAnalyzer
 from .config import load_config
 
 
@@ -106,6 +107,7 @@ class TestRunner:
             ai_model      = self.config["ai"]["model"],
             base_url      = self.base_url,
             report_dir    = report_dir,
+            analyze_failures = self.config.get("ai", {}).get("analyze_failures", True),
         )
 
         def _worker(test: TestCase) -> TestResult:
@@ -187,12 +189,17 @@ def _validate(
         result = ai.validate_response(
             response, str(validation.expected or ""), validation.prompt
         )
-        return ValidationResult(
-            kind,
-            bool(result.get("pass")),
-            result.get("reason", ""),
-            float(result.get("confidence", 0)),
-        )
+        passed = bool(result.get("pass"))
+        conf   = float(result.get("confidence", 0))
+        reason = result.get("reason", "")
+        min_conf = validation.min_confidence
+        if passed and min_conf is not None and conf < min_conf:
+            passed = False
+            reason = (
+                f"AI said pass but confidence {conf:.0%} < required {min_conf:.0%}. "
+                + reason
+            )
+        return ValidationResult(kind, passed, reason, conf)
 
     if kind == "api_response":
         if interceptor is None:
@@ -349,7 +356,7 @@ def _run_test_isolated(test: TestCase, run_config: dict) -> TestResult:
     finally:
         engine.stop()
 
-    return TestResult(
+    result = TestResult(
         id=test.id,
         name=test.name,
         status=status,
@@ -362,3 +369,16 @@ def _run_test_isolated(test: TestCase, run_config: dict) -> TestResult:
         api_errors=api_errs,
         healed_selectors=list(engine.healed_selectors),
     )
+
+    # Failure analysis — runs after engine is stopped (no browser needed)
+    if result.status == "FAIL" and run_config.get("analyze_failures", True):
+        try:
+            analyzer = FailureAnalyzer(
+                provider=run_config.get("ai_provider", "none"),
+                model=run_config.get("ai_model", "gpt-4o-mini"),
+            )
+            result.failure_analysis = analyzer.analyze(result)
+        except Exception:
+            pass  # analysis is best-effort; never fail the run because of it
+
+    return result
