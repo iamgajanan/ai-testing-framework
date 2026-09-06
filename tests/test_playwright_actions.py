@@ -38,11 +38,23 @@ def test_press_without_selector_uses_keyboard():
     page.keyboard.press.assert_called_once_with("Escape")
 
 
-def test_upload_action_sets_files():
+def test_upload_action_sets_files(tmp_path):
     engine = PlaywrightEngine()
     page = Mock()
     engine.page = page
 
-    engine.run_step(SimpleNamespace(action="upload", selector="#file", value="fixtures/a.txt", timeout=1000))
+    upload_file = tmp_path / "a.txt"
+    upload_file.write_text("test upload")
 
-    page.locator("#file").set_input_files.assert_called_once_with("fixtures/a.txt", timeout=1000)
+    engine.run_step(
+        SimpleNamespace(
+            action="upload",
+            selector="#file",
+            value=str(upload_file),
+            timeout=1000,
+        )
+    )
+
+    page.locator.return_value.set_input_files.assert_called_once_with(
+        str(upload_file), timeout=1000
+    )
