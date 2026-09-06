@@ -141,8 +141,12 @@ class TestGenerator:
 
     def _heuristic_generate(self,page_info:dict[str,Any],relative_url:str)->dict[str,Any]:
         title=page_info.get("title") or "Generated Suite"; validations=[{"type":"element_present","selector":self._selector(e)} for e in page_info.get("inputs",[])[:4]+page_info.get("buttons",[])[:2] if self._selector(e)]; validations += [{"type":"text_contains","selector":"body","expected":h} for h in page_info.get("headings",[])[:1]]
-        tests=[{"id":"GEN-001","name":"Page loads with expected elements","url":relative_url,"steps":[],"validations":validations,"error_checks":["console_errors"]}]; text_inputs=[i for i in page_info.get("inputs",[]) if i.get("type","text") in ("","text","search")]; buttons=page_info.get("buttons",[])
-        if text_inputs and buttons:
+        tests=[{"id":"GEN-001","name":"Page loads with expected elements","url":relative_url,"steps":[],"validations":validations,"error_checks":["console_errors"]}]; all_inputs=page_info.get("inputs",[]); text_inputs=[i for i in all_inputs if i.get("type","text") in ("","text","search")]; buttons=page_info.get("buttons",[])
+        # Do not submit authentication/password forms with fabricated credentials. A generic
+        # generator has no safe way to know valid credentials, and a negative 401 response can
+        # surface as a browser console error even when the application is behaving correctly.
+        has_password_input=any(str(i.get("type","")).lower()=="password" for i in all_inputs)
+        if text_inputs and buttons and not has_password_input:
             steps=[{"action":"type","selector":self._selector(i),"value":"test"} for i in text_inputs[:2] if self._selector(i)]
             if self._selector(buttons[0]): steps.append({"action":"click","selector":self._selector(buttons[0])})
             tests.append({"id":"GEN-002","name":"Form submission","url":relative_url,"steps":steps,"validations":[],"error_checks":["console_errors"]})
