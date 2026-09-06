@@ -25,8 +25,23 @@ class Validation:
     api_url: Optional[str] = None
     api_method: Optional[str] = None
     api_status: Optional[int] = None
+    api_request_headers: Dict[str, str] = field(default_factory=dict)
+    api_response_headers: Dict[str, str] = field(default_factory=dict)
+    api_request_body: Any = None
+    api_response_body: Any = None
+    api_json_schema: Optional[Dict[str, Any]] = None
+    api_response_time_ms: Optional[float] = None
     json_path: Optional[str] = None
     body_contains: Optional[str] = None
+    file_path: Optional[str] = None
+    expected_filename: Optional[str] = None
+    expected_extension: Optional[str] = None
+    expected_mime: Optional[str] = None
+    min_size: Optional[int] = None
+    max_size: Optional[int] = None
+    file_type: Optional[str] = None
+    file_text_contains: Optional[str] = None
+    file_pattern: Optional[str] = None
     timeout: int = 5000
     min_confidence: Optional[float] = None
 

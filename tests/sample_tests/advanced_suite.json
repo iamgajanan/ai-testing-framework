@@ -1,0 +1,37 @@
+{
+  "test_suite": "Advanced Framework E2E",
+  "tests": [
+    {
+      "id": "API-ADV-001",
+      "name": "POST API request and response assertions",
+      "url": "/api-demo",
+      "steps": [
+        {"action": "fill", "selector": "#message", "value": "hello"},
+        {"action": "click", "selector": "#send"}
+      ],
+      "validations": [
+        {"type": "api_response", "api_url": "/api/echo", "api_method": "POST", "api_status": 200,
+         "api_request_headers": {"X-Test-Header": "framework"},
+         "api_request_body": {"message": "hello"},
+         "api_response_headers": {"X-Demo-Response": "echo"},
+         "json_path": "success", "expected": true,
+         "api_json_schema": {"type": "object", "required": ["success", "message", "received"], "properties": {"success": {"type": "boolean"}, "message": {"type": "string"}}},
+         "api_response_time_ms": 2000}
+      ]
+    },
+    {
+      "id": "FILE-ADV-001",
+      "name": "Download and validate CSV",
+      "url": "/",
+      "steps": [{"action": "download", "selector": "#download"}],
+      "validations": [{"type": "download_validation", "expected_filename": "sample.csv", "expected_extension": ".csv", "expected_mime": "text/csv", "expected_columns": ["First Name", "Last Name", "Country"]}]
+    },
+    {
+      "id": "FILE-ADV-002",
+      "name": "Validate upload fixture and upload it",
+      "url": "/",
+      "steps": [{"action": "upload", "selector": "#file", "value": "tests/sample_tests/sample_upload.csv"}],
+      "validations": [{"type": "upload_validation", "file_path": "tests/sample_tests/sample_upload.csv", "file_type": "csv", "expected_columns": ["First Name", "Last Name", "Country"]}]
+    }
+  ]
+}

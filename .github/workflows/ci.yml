@@ -8,58 +8,47 @@ on:
 
 jobs:
   test:
+    name: Python + ${{ matrix.browser }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.11', '3.12']
+        browser: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@v4
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-
+          python-version: ${{ matrix.python }}
       - name: Install dependencies
         run: pip install -r requirements.txt
-
-      - name: Install Playwright browsers
-        run: playwright install --with-deps chromium
-
+      - name: Install Playwright browser
+        run: playwright install --with-deps ${{ matrix.browser }}
       - name: Run unit tests
         run: pytest -q
-
       - name: Start demo app
         run: |
-          python examples/demo_app.py &
-          sleep 2
-          curl -sf http://127.0.0.1:8000/api/search?q=ping
-
-      - name: E2E — Phase 2B (sequential)
+          python examples/demo_app.py > /tmp/demo-app.log 2>&1 &
+          for i in {1..20}; do curl -sf http://127.0.0.1:8000/api/search?q=ping && break; sleep 0.5; done
+      - name: E2E core suite
+        run: ai-test --file tests/sample_tests/test_suite.json --base-url http://127.0.0.1:8000 --ai-provider none --browser ${{ matrix.browser }} --format html json
+      - name: E2E AI locator
+        run: ai-test --file tests/sample_tests/ai_locator_suite.json --base-url http://127.0.0.1:8000 --ai-provider none --browser ${{ matrix.browser }}
+      - name: E2E self healing
+        run: ai-test --file tests/sample_tests/self_healing_suite.json --base-url http://127.0.0.1:8000 --ai-provider none --browser ${{ matrix.browser }} --format all
+      - name: E2E parallel
+        run: ai-test --file tests/sample_tests/parallel_suite.json --base-url http://127.0.0.1:8000 --ai-provider none --browser ${{ matrix.browser }} --workers 3
+      - name: E2E advanced API and files
+        run: ai-test --file tests/sample_tests/advanced_suite.json --base-url http://127.0.0.1:8000 --ai-provider none --browser ${{ matrix.browser }} --format html json
+      - name: E2E AI test generation
         run: |
-          ai-test --file tests/sample_tests/test_suite.json \
-                  --base-url http://127.0.0.1:8000 \
-                  --ai-provider none --format html json
-
-      - name: E2E — Phase 3 AI locator
-        run: |
-          ai-test --file tests/sample_tests/ai_locator_suite.json \
-                  --base-url http://127.0.0.1:8000 \
-                  --ai-provider none
-
-      - name: E2E — Phase 4 self-healing
-        run: |
-          ai-test --file tests/sample_tests/self_healing_suite.json \
-                  --base-url http://127.0.0.1:8000 \
-                  --ai-provider none --format all
-
-      - name: E2E — Phase 6 parallel (3 workers)
-        run: |
-          ai-test --file tests/sample_tests/parallel_suite.json \
-                  --base-url http://127.0.0.1:8000 \
-                  --ai-provider none --workers 3
-
-      - name: Upload test reports
+          ai-test generate --url http://127.0.0.1:8000 --output /tmp/generated_suite.json --browser ${{ matrix.browser }} --ai-provider none
+          ai-test --file /tmp/generated_suite.json --base-url http://127.0.0.1:8000 --ai-provider none --browser ${{ matrix.browser }}
+      - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports
+          name: reports-${{ matrix.python }}-${{ matrix.browser }}
           path: reports/
           retention-days: 14
