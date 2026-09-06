@@ -5,8 +5,6 @@ import os
 import re
 from typing import Any, Dict
 
-from openai import OpenAI
-
 
 class AIValidator:
     """Semantic test oracle with OpenAI and deterministic fallback support."""
@@ -30,8 +28,15 @@ class AIValidator:
     def __init__(self, provider: str = "openai", model: str = "gpt-4o-mini") -> None:
         self.provider = provider.lower()
         self.model = model
-        api_key = os.getenv("OPENAI_API_KEY")
-        self.client = OpenAI(api_key=api_key) if self.provider == "openai" and api_key else None
+        self.client = None
+        if self.provider == "openai":
+            api_key = os.getenv("OPENAI_API_KEY")
+            if api_key:
+                try:
+                    from openai import OpenAI
+                    self.client = OpenAI(api_key=api_key)
+                except ImportError:
+                    self.client = None
 
     def validate_response(self, response: str, expected: str, context: str = "") -> Dict[str, Any]:
         if self.provider == "none" or self.client is None:
@@ -113,9 +118,6 @@ class AIValidator:
                 "confidence": 0.60,
             }
 
-        # Ignore generic test-language words and match the meaningful terms in
-        # the expected condition. This makes phrases such as "A response
-        # mentioning OpenAI" evaluate against the meaningful term "OpenAI".
         terms = [
             term for term in re.findall(r"[A-Za-z0-9@.$-]{3,}", exp.lower())
             if term not in cls._GENERIC_TERMS
