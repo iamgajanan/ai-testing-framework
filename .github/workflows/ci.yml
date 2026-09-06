@@ -62,7 +62,7 @@ jobs:
           print('authenticated pages discovered:', sorted({t.get('url') for t in data['tests']}))
           PY
       - name: E2E Phase C failure artifacts
-        run: python tests/verify_phase_c_artifacts.py
+        run: python tests/verify_phase_c_artifacts.py --browser ${{ matrix.browser }}
       - name: E2E AI test generation and multi-page discovery
         run: |
           ai-test generate --url http://127.0.0.1:8000 --output /tmp/generated_suite.json --browser ${{ matrix.browser }} --ai-provider none --max-pages 3
