@@ -44,9 +44,11 @@ jobs:
         run: ai-test --file tests/sample_tests/parallel_suite.json --base-url http://127.0.0.1:8000 --ai-provider none --browser ${{ matrix.browser }} --workers 3
       - name: E2E advanced API and files
         run: ai-test --file tests/sample_tests/advanced_suite.json --base-url http://127.0.0.1:8000 --ai-provider none --browser ${{ matrix.browser }} --format html json
-      - name: E2E AI test generation
+      - name: E2E Phase B auth, dialogs and tabs
+        run: ai-test --file tests/sample_tests/phase_b_suite.json --base-url http://127.0.0.1:8000 --ai-provider none --browser ${{ matrix.browser }} --format html json
+      - name: E2E AI test generation and multi-page discovery
         run: |
-          ai-test generate --url http://127.0.0.1:8000 --output /tmp/generated_suite.json --browser ${{ matrix.browser }} --ai-provider none
+          ai-test generate --url http://127.0.0.1:8000 --output /tmp/generated_suite.json --browser ${{ matrix.browser }} --ai-provider none --max-pages 3
           ai-test --file /tmp/generated_suite.json --base-url http://127.0.0.1:8000 --ai-provider none --browser ${{ matrix.browser }}
       - name: Upload reports
         if: always()
