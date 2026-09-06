@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 
@@ -30,6 +31,7 @@ class PlaywrightEngine:
         self.downloads: list[str] = []
         self.uploads: list[str] = []
         self.healed_selectors: list[dict[str, Any]] = []
+        self.dialogs: list[dict[str, Any]] = []
 
     def start(self) -> None:
         self.playwright = sync_playwright().start()
@@ -56,6 +58,16 @@ class PlaywrightEngine:
         assert self.page is not None
         self.page.on("console", lambda msg: self.console_errors.append(msg.text) if msg.type == "error" else None)
         self.page.on("requestfailed", lambda request: self.api_errors.append(f"{request.method} {request.url}: {request.failure}"))
+        self.page.on("dialog", self._handle_dialog)
+
+    def _handle_dialog(self, dialog) -> None:
+        # Default is dismiss so an unexpected dialog never deadlocks a test.
+        action = getattr(self, "_dialog_action", "dismiss")
+        self.dialogs.append({"type": dialog.type, "message": dialog.message, "action": action})
+        if action == "accept":
+            dialog.accept()
+        else:
+            dialog.dismiss()
 
     def open(self, url: str, base_url: str = "") -> None:
         assert self.page is not None
@@ -88,6 +100,54 @@ class PlaywrightEngine:
                 return action_fn(self.page.locator(healed_selector))
             raise original
 
+    def _set_cookie(self, cookie: dict[str, Any]) -> None:
+        assert self.context is not None and self.page is not None
+        item = dict(cookie)
+        if "url" not in item and "domain" not in item:
+            item["url"] = self.page.url
+        if "domain" in item and "path" not in item:
+            item["path"] = "/"
+        self.context.add_cookies([item])
+
+    def _set_local_storage(self, values: dict[str, Any]) -> None:
+        assert self.page is not None
+        self.page.evaluate("""(items) => { for (const [k,v] of Object.entries(items)) localStorage.setItem(k, String(v)); }""", values)
+
+    def _login(self, value: Any) -> None:
+        if not isinstance(value, dict):
+            raise ValueError("Login step value must be an object")
+        username_selector = value.get("username_selector")
+        password_selector = value.get("password_selector")
+        submit_selector = value.get("submit_selector")
+        if not username_selector or not password_selector or not submit_selector:
+            raise ValueError("Login requires username_selector, password_selector and submit_selector")
+        self.page.locator(username_selector).fill(str(value.get("username", "")))
+        self.page.locator(password_selector).fill(str(value.get("password", "")))
+        self.page.locator(submit_selector).click()
+        if value.get("wait_for_load_state"):
+            self.page.wait_for_load_state(str(value["wait_for_load_state"]))
+
+    def _switch_tab(self, value: Any) -> Page:
+        assert self.context is not None
+        pages = self.context.pages
+        if not pages:
+            raise ValueError("No browser pages are open")
+        if value is None or value == "last":
+            target = pages[-1]
+        elif isinstance(value, int) or str(value).isdigit():
+            index = int(value)
+            if index < 0 or index >= len(pages):
+                raise IndexError(f"Tab index out of range: {index}")
+            target = pages[index]
+        else:
+            target = next((p for p in pages if str(value) in p.url), None)
+            if target is None:
+                raise ValueError(f"No tab URL matched {value!r}")
+        target.bring_to_front()
+        self.page = target
+        self.page.set_default_timeout(self.timeout)
+        return target
+
     def run_step(self, step: Any) -> Any:
         assert self.page is not None
         action = step.action.lower().strip()
@@ -101,7 +161,33 @@ class PlaywrightEngine:
             if not value_text.strip():
                 raise ValueError("Evaluate step requires JavaScript in 'value'.")
             return self.page.evaluate(value_text)
-
+        if action in {"set_cookie", "cookie"}:
+            cookies = value if isinstance(value, list) else [value]
+            if not all(isinstance(c, dict) for c in cookies):
+                raise ValueError("set_cookie value must be a cookie object or list of cookie objects")
+            for cookie in cookies:
+                self._set_cookie(cookie)
+            return
+        if action in {"set_local_storage", "local_storage"}:
+            if not isinstance(value, dict):
+                raise ValueError("set_local_storage value must be an object")
+            self._set_local_storage(value)
+            return
+        if action in {"login", "login_form"}:
+            return self._login(value)
+        if action in {"accept_dialog", "accept_alert"}:
+            self._dialog_action = "accept"
+            return
+        if action in {"dismiss_dialog", "dismiss_alert"}:
+            self._dialog_action = "dismiss"
+            return
+        if action in {"switch_tab", "switch_page"}:
+            return self._switch_tab(value)
+        if action in {"close_tab", "close_page"}:
+            if len(self.context.pages) <= 1:
+                raise ValueError("Cannot close the only browser tab")
+            self.page.close()
+            return self._switch_tab("last")
         if action in {"press", "keyboard"} and not selector and not description:
             self.page.keyboard.press(value_text)
             return
