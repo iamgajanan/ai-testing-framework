@@ -43,6 +43,10 @@ def _conf(value) -> str:
         return ""
 
 
+def _section(content: str) -> str:
+    return f"<div class='section'>{content}</div>" if content else ""
+
+
 def _inline_screenshot(path: str) -> str:
     try:
         data = base64.b64encode(Path(path).read_bytes()).decode()
@@ -59,11 +63,7 @@ def _steps(result: TestResult) -> str:
         value = "" if step.value is None else _e(step.value)
         output = "" if step.result is None else _e(step.result)
         error = f"<br><span class='fail'>{_e(step.error)}</span>" if step.error else ""
-        rows.append(
-            f"<tr><td>{i}</td><td>{_e(step.action)}</td><td>{_e(step.selector or '')}</td>"
-            f"<td>{value}</td><td class='{step.status.lower()}'>{_e(step.status)}</td>"
-            f"<td>{step.duration:.3f}s</td><td>{output}{error}</td></tr>"
-        )
+        rows.append(f"<tr><td>{i}</td><td>{_e(step.action)}</td><td>{_e(step.selector or '')}</td><td>{value}</td><td class='{step.status.lower()}'>{_e(step.status)}</td><td>{step.duration:.3f}s</td><td>{output}{error}</td></tr>")
     return "<table class='trace'><thead><tr><th>#</th><th>Action</th><th>Selector</th><th>Value</th><th>Status</th><th>Time</th><th>Result/Error</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
 
 
@@ -127,22 +127,18 @@ def write_html_report(results: Iterable[TestResult], output_dir: str = "reports"
     cards = []
     for r in results:
         cls = 'pass' if r.status == 'PASS' else 'fail'
+        failure_section = _section(_failure(r)) if r.failure_analysis and r.failure_analysis.get('category') != 'none' else ''
+        healing_section = _section(_healing(r.healed_selectors)) if r.healed_selectors else ''
+        screenshot_section = _section(_inline_screenshot(r.screenshot)) if r.screenshot else ''
+        error_section = _section(_errors(r)) if (r.error or r.console_errors or r.api_errors) else ''
         cards.append(
             f"<div class='card test-card {cls}'><div class='test-header'><span class='test-id'>{_e(r.id)}</span><span class='test-name'>{_e(r.name)}</span><span class='badge {cls}'>{'✅ PASS' if cls == 'pass' else '❌ FAIL'}</span><span class='dur-badge'>{r.duration:.2f}s</span></div>"
-            f"<div class='section'><h3>Step execution trace</h3>{_steps(r)}</div>"
-            f"<div class='section'><h3>Validations</h3>{_validations(r.validations)}</div>"
-            f"{('<div class=\'section\'>' + _failure(r) + '</div>') if r.failure_analysis and r.failure_analysis.get('category') != 'none' else ''}"
-            f"{('<div class=\'section\'>' + _healing(r.healed_selectors) + '</div>') if r.healed_selectors else ''}"
-            f"{('<div class=\'section\'>' + _inline_screenshot(r.screenshot) + '</div>') if r.screenshot else ''}"
-            f"{('<div class=\'section\'>' + _errors(r) + '</div>') if (r.error or r.console_errors or r.api_errors) else ''}</div>"
+            + _section("<h3>Step execution trace</h3>" + _steps(r))
+            + _section("<h3>Validations</h3>" + _validations(r.validations))
+            + failure_section + healing_section + screenshot_section + error_section + "</div>"
         )
 
-    html = f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{title}</title><style>{_CSS}</style></head><body>
-<h1>{title}</h1><p class='subtitle'>Generated {ts}</p>
-<div class='dashboard'><div class='stat total'><div class='value'>{total}</div><div class='label'>Total</div></div><div class='stat pass'><div class='value'>{passed}</div><div class='label'>Passed</div></div><div class='stat fail'><div class='value'>{failed}</div><div class='label'>Failed</div></div><div class='stat dur'><div class='value'>{duration:.1f}s</div><div class='label'>Duration</div></div></div>
-<div class='card'><div class='rate-bar-wrap'><div class='rate-bar' style='width:{rate:.1f}%'></div></div><div class='rate-label'>{rate:.1f}% pass rate</div></div>
-{_flaky_section(output_dir)}{''.join(cards)}
-</body></html>"""
+    html = f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{title}</title><style>{_CSS}</style></head><body><h1>{title}</h1><p class='subtitle'>Generated {ts}</p><div class='dashboard'><div class='stat total'><div class='value'>{total}</div><div class='label'>Total</div></div><div class='stat pass'><div class='value'>{passed}</div><div class='label'>Passed</div></div><div class='stat fail'><div class='value'>{failed}</div><div class='label'>Failed</div></div><div class='stat dur'><div class='value'>{duration:.1f}s</div><div class='label'>Duration</div></div></div><div class='card'><div class='rate-bar-wrap'><div class='rate-bar' style='width:{rate:.1f}%'></div></div><div class='rate-label'>{rate:.1f}% pass rate</div></div>{_flaky_section(output_dir)}{''.join(cards)}</body></html>"
     target = out / 'test_report.html'
     target.write_text(html, encoding='utf-8')
     return str(target)
