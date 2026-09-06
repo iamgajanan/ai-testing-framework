@@ -10,7 +10,7 @@ from typing import Optional
 from ..ai.failure_analyzer import FailureAnalyzer
 from ..automation.network_interceptor import NetworkInterceptor
 from ..automation.playwright_engine import PlaywrightEngine
-from ..core.models import TestCase, TestResult, ValidationResult, TestSuite
+from ..core.models import StepResult, TestCase, TestResult, ValidationResult, TestSuite
 from ..core.parallel_runner import run_parallel
 from ..parsers.csv_parser import CSVParser
 from ..parsers.json_parser import JSONParser
@@ -25,7 +25,11 @@ from ..validators.api_validator import validate_api_response
 from ..validators.file_validator import validate_file
 from ..validators.regex_validator import validate_regex
 from ..validators.table_validator import validate_table
-from ..validators.ui_validator import validate_element_present, validate_text_contains, validate_url_contains
+from ..validators.ui_validator import (
+    validate_element_attribute, validate_element_count, validate_element_present,
+    validate_element_state, validate_element_value, validate_text_contains,
+    validate_url_contains,
+)
 from .config import load_config
 
 
@@ -146,6 +150,22 @@ def _validate(ai: AIValidator, page, validation, response: str, interceptor: Opt
     if kind == "table_validation":
         passed, reason = validate_table(page, validation.selector, validation.expected_columns, validation.row_condition)
         return ValidationResult(kind, passed, reason)
+    if kind in {"element_attribute", "attribute"}:
+        attribute = str(validation.prompt or "")
+        if not attribute:
+            raise ValueError("element_attribute validation requires 'prompt' to contain the attribute name")
+        passed, reason = validate_element_attribute(page, validation.selector or "", attribute, validation.expected)
+        return ValidationResult(kind, passed, reason)
+    if kind == "element_value":
+        passed, reason = validate_element_value(page, validation.selector or "", validation.expected)
+        return ValidationResult(kind, passed, reason, actual=validation.expected)
+    if kind in {"element_visible", "element_hidden", "element_enabled", "element_disabled", "element_checked", "element_unchecked", "element_editable"}:
+        state = kind.removeprefix("element_")
+        passed, reason = validate_element_state(page, validation.selector or "", state, True)
+        return ValidationResult(kind, passed, reason)
+    if kind == "element_count":
+        passed, reason = validate_element_count(page, validation.selector or "", int(validation.expected))
+        return ValidationResult(kind, passed, reason, actual=page.locator(validation.selector or "").count())
     if kind in {"file_validation", "download_validation", "upload_validation"}:
         path = validation.file_path
         if not path and downloaded_files:
@@ -162,9 +182,16 @@ def _validate(ai: AIValidator, page, validation, response: str, interceptor: Opt
     raise ValueError(f"Unsupported validation type: {validation.type!r}")
 
 
+def _safe_trace_value(value):
+    if value is None or isinstance(value, (str, int, float, bool, dict, list)):
+        return value
+    return str(value)
+
+
 def _run_test_isolated(test: TestCase, run_config: dict) -> TestResult:
     started = time.perf_counter()
     validations: list[ValidationResult] = []
+    step_results: list[StepResult] = []
     error = response = ""
     screenshot = None
     console: list[str] = []
@@ -180,7 +207,19 @@ def _run_test_isolated(test: TestCase, run_config: dict) -> TestResult:
         interceptor.attach(engine.page)
         engine.open(test.url, run_config["base_url"])
         for step in test.steps:
-            engine.run_step(step)
+            step_started = time.perf_counter()
+            trace = StepResult(action=step.action, selector=step.selector, value=step.value, description=step.description)
+            try:
+                step_output = engine.run_step(step)
+                trace.result = _safe_trace_value(step_output)
+                trace.duration = time.perf_counter() - step_started
+                step_results.append(trace)
+            except Exception as exc:
+                trace.status = "FAIL"
+                trace.duration = time.perf_counter() - step_started
+                trace.error = str(exc)
+                step_results.append(trace)
+                raise
         api_validations = [v for v in test.validations if v.type.lower() == "api_response"]
         if api_validations:
             deadline = time.monotonic() + 2.0
@@ -222,7 +261,7 @@ def _run_test_isolated(test: TestCase, run_config: dict) -> TestResult:
     finally:
         engine.stop()
     result = TestResult(id=test.id, name=test.name, status=status, duration=time.perf_counter() - started,
-                        response=response, error=error, screenshot=screenshot, validations=validations,
+                        response=response, error=error, screenshot=screenshot, steps=step_results, validations=validations,
                         console_errors=console, api_errors=api_errs, healed_selectors=list(engine.healed_selectors))
     if result.status == "FAIL" and run_config.get("analyze_failures", True):
         try:
