@@ -6,6 +6,7 @@ def build_parser():
     parser=argparse.ArgumentParser(description='Universal AI-powered web test runner'); sub=parser.add_subparsers(dest='command')
     run_p=sub.add_parser('run',help='Run a test suite'); _add_run_args(run_p)
     gen_p=sub.add_parser('generate',help='Generate a test suite from a live URL'); gen_p.add_argument('--url',required=True); gen_p.add_argument('--output',default='tests/generated_suite.json'); gen_p.add_argument('--browser',default='chromium',choices=['chromium','firefox','webkit']); gen_p.add_argument('--base-url',default=''); gen_p.add_argument('--max-pages',type=int,default=1); gen_p.add_argument('--ai-provider',choices=['openai','none'],default='none'); gen_p.add_argument('--config',default=None); gen_p.add_argument('--login-json',default=None,help='JSON file describing login for authenticated crawling')
+    auto_p=sub.add_parser('autonomous',help='Explore, generate, and execute tests autonomously'); auto_p.add_argument('--url',required=True); auto_p.add_argument('--output',default='reports/autonomous'); auto_p.add_argument('--browser',default='chromium',choices=['chromium','firefox','webkit']); auto_p.add_argument('--base-url',default=''); auto_p.add_argument('--max-pages',type=int,default=5); auto_p.add_argument('--goal',default='',help='Optional testing goal used by the workflow planner'); auto_p.add_argument('--ai-provider',choices=['openai','none'],default='none'); auto_p.add_argument('--ai-model',default='gpt-4o-mini'); auto_p.add_argument('--workers',type=int,default=1); auto_p.add_argument('--format',dest='formats',nargs='+',choices=['html','json','pdf','all'],default=['html','json']); auto_p.add_argument('--login-json',default=None,help='JSON file describing login for authenticated exploration')
     plan_p=sub.add_parser('plan',help='Plan browser workflows from an app description'); plan_p.add_argument('--description',required=True); plan_p.add_argument('--workflow',action='append',default=[]); plan_p.add_argument('--output',default='reports/plan.json'); plan_p.add_argument('--ai-provider',choices=['openai','none'],default='none'); plan_p.add_argument('--ai-model',default='gpt-4o-mini')
     data_p=sub.add_parser('data',help='Generate realistic deterministic or AI test data'); data_p.add_argument('--fields',required=True,help='JSON array of field descriptors'); data_p.add_argument('--count',type=int,default=1); data_p.add_argument('--output',default='reports/test_data.json'); data_p.add_argument('--ai-provider',choices=['openai','none'],default='none'); data_p.add_argument('--ai-model',default='gpt-4o-mini')
     _add_run_args(parser); return parser
@@ -39,6 +40,20 @@ def _cmd_generate(args):
     except Exception as exc: print(f'ERROR: {exc}',file=sys.stderr); return 2
     print(f'✅ Generated test suite written to: {path}'); return 0
 
+def _cmd_autonomous(args):
+    from .ai.autonomous import AutonomousTester
+    formats=['html','json','pdf'] if 'all' in args.formats else args.formats
+    try:
+        login=json.loads(open(args.login_json,encoding='utf-8').read()) if args.login_json else None
+        print(f'🤖 Autonomous exploration started: {args.url} (up to {args.max_pages} pages)')
+        run=AutonomousTester(args.ai_provider,args.ai_model).run(url=args.url,output_dir=args.output,browser=args.browser,base_url=args.base_url,max_pages=args.max_pages,goal=args.goal,login=login,workers=args.workers,formats=formats)
+    except Exception as exc: print(f'ERROR: {exc}',file=sys.stderr); return 2
+    print(f'Autonomous tests: {run["total"]} | Passed: {run["passed"]} | Failed: {run["failed"]}')
+    print(f'Generated suite: {run["suite"]}')
+    print(f'HTML report: {args.output}/test_report.html')
+    _write_github_summary(run['results'],args.output,args.workers)
+    return 0 if run['failed']==0 else 1
+
 def _cmd_plan(args):
     from .ai.agentic import AgenticAI
     result=AgenticAI(args.ai_provider,args.ai_model).plan(args.description,args.workflow); out=args.output; os.makedirs(os.path.dirname(out) or '.',exist_ok=True); json.dump(result,open(out,'w',encoding='utf-8'),indent=2); print(out); return 0
@@ -50,6 +65,7 @@ def _cmd_data(args):
 def main():
     args=build_parser().parse_args()
     if args.command=='generate':return _cmd_generate(args)
+    if args.command=='autonomous':return _cmd_autonomous(args)
     if args.command=='plan':return _cmd_plan(args)
     if args.command=='data':return _cmd_data(args)
     return _cmd_run(args)

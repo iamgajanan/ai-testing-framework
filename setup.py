@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="ai-testing-framework",
-    version="0.3.0",
+    version="0.4.0",
     description="Universal AI-powered web testing framework",
     package_dir={"": "src"},
     packages=find_packages("src"),
