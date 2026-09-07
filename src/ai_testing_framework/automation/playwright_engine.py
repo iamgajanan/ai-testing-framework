@@ -114,9 +114,15 @@ class PlaywrightEngine:
         if action in {'accept_dialog','accept_alert'}:self._dialog_action='accept';return
         if action in {'dismiss_dialog','dismiss_alert'}:self._dialog_action='dismiss';return
         if action in {'open_popup','click_popup'}:
-            locator=self._resolve_locator(selector,description)
-            with self.context.expect_page(timeout=timeout) as popup_info:locator.click(timeout=timeout)
-            popup=popup_info.value;popup.wait_for_load_state('domcontentloaded',timeout=timeout);self.page=popup;self.page.set_default_timeout(self.timeout);self._attach_listeners();return popup
+            locator=self._resolve_locator(selector,description);existing=set(self.context.pages);locator.click(timeout=timeout)
+            deadline=__import__('time').monotonic()+timeout/1000
+            popup=None
+            while __import__('time').monotonic()<deadline:
+                candidates=[p for p in self.context.pages if p not in existing]
+                if candidates:popup=candidates[-1];break
+                self.page.wait_for_timeout(50)
+            if popup is None:raise TimeoutError(f'Timeout {timeout}ms exceeded while waiting for popup page')
+            popup.wait_for_load_state('domcontentloaded',timeout=timeout);self.page=popup;self.page.set_default_timeout(self.timeout);self._attach_listeners();return popup
         if action in {'switch_tab','switch_page'}:return self._switch_tab(value)
         if action in {'close_tab','close_page'}:
             if len(self.context.pages)<=1:raise ValueError('Cannot close the only browser tab')
