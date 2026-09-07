@@ -34,27 +34,39 @@ class SupabaseStorageClient:
         self._url = f"{url}/storage/v1"
         self._headers = {"apikey": key, "Authorization": f"Bearer {key}"}
 
-    async def upload_file(self, local_path: str, storage_path: str) -> StoredArtifact:
+    async def upload_file(self, local_path: str, storage_path: str, bucket: str = BUCKET) -> StoredArtifact:
         path = Path(local_path)
         if not path.is_file():
             raise FileNotFoundError(local_path)
-        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         data = path.read_bytes()
+        return await self.upload_bytes(data, path.name, storage_path, None, bucket=bucket)
+
+    async def upload_bytes(
+        self,
+        data: bytes,
+        filename: str,
+        storage_path: str,
+        content_type: str | None = None,
+        *,
+        bucket: str = "test-suites",
+    ) -> StoredArtifact:
+        guessed = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        resolved_content_type = content_type or guessed
         headers = {
             **self._headers,
-            "Content-Type": content_type,
+            "Content-Type": resolved_content_type,
             "x-upsert": "true",
             "Cache-Control": "3600",
         }
-        url = f"{self._url}/object/{BUCKET}/{quote(storage_path, safe='/')}"
+        url = f"{self._url}/object/{quote(bucket, safe='')}/{quote(storage_path, safe='/')}"
         async with httpx.AsyncClient(timeout=120) as client:
             response = await client.post(url, headers=headers, content=data)
         if not response.is_success:
             raise SupabaseDataError(f"Storage upload failed: {response.text}", response.status_code)
-        return StoredArtifact(path.name, storage_path, content_type, len(data))
+        return StoredArtifact(filename, storage_path, resolved_content_type, len(data))
 
-    async def create_signed_url(self, storage_path: str, expires_in: int = 3600) -> str:
-        url = f"{self._url}/object/sign/{BUCKET}/{quote(storage_path, safe='/')}"
+    async def create_signed_url(self, storage_path: str, expires_in: int = 3600, bucket: str = BUCKET) -> str:
+        url = f"{self._url}/object/sign/{quote(bucket, safe='')}/{quote(storage_path, safe='/')}"
         async with httpx.AsyncClient(timeout=15) as client:
             response = await client.post(url, headers=self._headers, json={"expiresIn": expires_in})
         if not response.is_success:

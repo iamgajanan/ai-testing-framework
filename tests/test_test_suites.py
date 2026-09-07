@@ -45,11 +45,15 @@ class FakeStorage:
         return f"https://storage.example/signed/{storage_path}?expires={expires_in}"
 
 
-def test_test_suite_routes_are_registered(monkeypatch):
-    fake = FakeDB()
+def _install_overrides(fake: FakeDB):
     user = AuthenticatedUser(id=str(fake.user_id), email="user@example.com", access_token="token")
     app.dependency_overrides[get_data_client] = lambda: fake
     app.dependency_overrides[get_current_user] = lambda: user
+
+
+def test_test_suite_routes_are_registered(monkeypatch):
+    fake = FakeDB()
+    _install_overrides(fake)
     monkeypatch.setattr("ai_testing_framework.server.test_suites.SupabaseStorageClient", FakeStorage)
     try:
         client = TestClient(app)
@@ -64,15 +68,14 @@ def test_test_suite_routes_are_registered(monkeypatch):
         assert body["version"] == 1
         assert body["filename"] == "suite.json"
         assert body["size_bytes"] == len(b'{"tests": []}')
+        assert len(body["sha256"]) == 64
     finally:
         app.dependency_overrides.clear()
 
 
 def test_test_suite_rejects_unsupported_file():
     fake = FakeDB()
-    user = AuthenticatedUser(id=str(fake.user_id), email="user@example.com", access_token="token")
-    app.dependency_overrides[get_data_client] = lambda: fake
-    app.dependency_overrides[get_current_user] = lambda: user
+    _install_overrides(fake)
     try:
         client = TestClient(app)
         response = client.post(

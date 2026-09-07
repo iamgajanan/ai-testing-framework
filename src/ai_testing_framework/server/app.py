@@ -14,6 +14,7 @@ from .db import SupabaseDataClient, SupabaseDataError, SupabaseServiceClient, ge
 from .executions import ExecutionRecord
 from .principal import ExecutionPrincipal, get_execution_principal
 from .storage import SupabaseStorageClient
+from .test_suites import router as test_suite_router
 
 
 class HealthResponse(BaseModel):
@@ -132,6 +133,7 @@ def get_execution_db(principal: ExecutionPrincipal = Depends(get_execution_princ
 
 def create_app() -> FastAPI:
     app = FastAPI(title="AI Testing Platform API", version="0.1.0")
+    app.include_router(test_suite_router)
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
@@ -208,17 +210,8 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=403, detail="API key is scoped to a different project")
         if principal.user and payload.requested_by and payload.requested_by != principal.user.id:
             raise HTTPException(status_code=403, detail="requested_by must match the authenticated user")
-        spec = ExecutionSpec(
-            suite_path=payload.spec.suite_path, base_url=payload.spec.base_url, browser=payload.spec.browser,
-            test_id=payload.spec.test_id, output_dir=payload.spec.output_dir, formats=tuple(payload.spec.formats),
-            workers=payload.spec.workers, config=payload.spec.config, ai_provider=payload.spec.ai_provider,
-        )
-        row = {
-            "organization_id": str(payload.organization_id), "project_id": str(payload.project_id), "requested_by": principal.requested_by,
-            "status": "queued", "suite_path": spec.suite_path, "base_url": spec.base_url, "browser": spec.browser,
-            "test_id": spec.test_id, "output_dir": spec.output_dir, "formats": list(spec.formats), "workers": spec.workers,
-            "config": spec.config, "ai_provider": spec.ai_provider, "metadata": payload.metadata,
-        }
+        spec = ExecutionSpec(suite_path=payload.spec.suite_path, base_url=payload.spec.base_url, browser=payload.spec.browser, test_id=payload.spec.test_id, output_dir=payload.spec.output_dir, formats=tuple(payload.spec.formats), workers=payload.spec.workers, config=payload.spec.config, ai_provider=payload.spec.ai_provider)
+        row = {"organization_id": str(payload.organization_id), "project_id": str(payload.project_id), "requested_by": principal.requested_by, "status": "queued", "suite_path": spec.suite_path, "base_url": spec.base_url, "browser": spec.browser, "test_id": spec.test_id, "output_dir": spec.output_dir, "formats": list(spec.formats), "workers": spec.workers, "config": spec.config, "ai_provider": spec.ai_provider, "metadata": payload.metadata}
         try:
             if principal.api_key:
                 rows = await SupabaseServiceClient().insert("executions", row)
