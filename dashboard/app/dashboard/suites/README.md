@@ -1,0 +1,1 @@
+The suite upload action calls the FastAPI SaaS endpoint through `dashboard/lib/api.ts`, forwarding the authenticated Supabase access token. Local development tries ports 8000 and 8001; production uses `AI_TESTING_API_URL`.
