@@ -2,7 +2,7 @@ name: Dashboard CI
 
 on:
   push:
-    branches: [main, phase-1a-step-7-dashboard-auth-landing]
+    branches: [main, phase-1a-step-7-dashboard-auth-landing, bug/frontend/step8]
     paths:
       - 'dashboard/**'
       - '.github/workflows/dashboard.yml'
@@ -35,5 +35,6 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+          AI_TESTING_API_URL: http://127.0.0.1:8000
           NEXT_PUBLIC_APP_URL: http://localhost:3000
         run: npm run build
