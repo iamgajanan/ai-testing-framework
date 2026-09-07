@@ -67,6 +67,13 @@ jobs:
         run: |
           ai-test generate --url http://127.0.0.1:8000 --output /tmp/generated_suite.json --browser ${{ matrix.browser }} --ai-provider none --max-pages 3
           ai-test --file /tmp/generated_suite.json --base-url http://127.0.0.1:8000 --ai-provider none --browser ${{ matrix.browser }}
+      - name: E2E Phase D autonomous testing
+        run: |
+          rm -rf /tmp/autonomous-${{ matrix.browser }}
+          ai-test autonomous --url http://127.0.0.1:8000 --output /tmp/autonomous-${{ matrix.browser }} --browser ${{ matrix.browser }} --ai-provider none --max-pages 5 --goal "Explore the application and verify its primary user-facing workflows"
+          test -s /tmp/autonomous-${{ matrix.browser }}/generated_suite.json
+          test -s /tmp/autonomous-${{ matrix.browser }}/autonomous_run.json
+          test -s /tmp/autonomous-${{ matrix.browser }}/test_report.html
       - name: Agentic planning and data generation
         run: |
           ai-test plan --description "A customer search application" --workflow "Search for a customer" --output /tmp/plan.json --ai-provider none
