@@ -1,5 +1,3 @@
-from uuid import UUID
-
 from fastapi.testclient import TestClient
 
 from ai_testing_framework.server.app import app
