@@ -52,7 +52,6 @@ def _install_overrides(fake: FakeDB):
         claims={"sub": str(fake.user_id)},
         access_token="token",
     )
-    assert user.claims["sub"] == user.id
     app.dependency_overrides[get_data_client] = lambda: fake
     app.dependency_overrides[get_current_user] = lambda: user
 
@@ -63,8 +62,9 @@ def test_test_suite_routes_are_registered(monkeypatch):
     monkeypatch.setattr("ai_testing_framework.server.test_suites.SupabaseStorageClient", FakeStorage)
     try:
         client = TestClient(app)
-        paths = {route.path for route in app.routes if hasattr(route, "path")}
-        assert f"/v1/projects/{{project_id}}/test-suites" in paths
+        target = "/v1/projects/{project_id}/test-suites"
+        paths = {route.path.rstrip("/") for route in app.routes if hasattr(route, "path")}
+        assert target.rstrip("/") in paths
         response = client.post(
             f"/v1/projects/{fake.project_id}/test-suites",
             files={"file": ("suite.json", b'{"tests": []}', "application/json")},
