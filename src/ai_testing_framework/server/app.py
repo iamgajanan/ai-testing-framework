@@ -126,7 +126,7 @@ def _artifact_select() -> str:
     return "id,execution_id,name,storage_path,content_type,size_bytes,created_at"
 
 
-def _user_db(principal: ExecutionPrincipal) -> SupabaseDataClient | None:
+def get_execution_db(principal: ExecutionPrincipal = Depends(get_execution_principal)) -> SupabaseDataClient | None:
     return SupabaseDataClient(principal.user) if principal.user else None
 
 
@@ -202,9 +202,8 @@ def create_app() -> FastAPI:
             raise _data_error(exc) from exc
 
     @app.post("/v1/executions", response_model=ExecutionResponse, status_code=202)
-    async def create_execution(payload: ExecutionRequestModel, principal: ExecutionPrincipal = Depends(get_execution_principal)) -> ExecutionResponse:
+    async def create_execution(payload: ExecutionRequestModel, principal: ExecutionPrincipal = Depends(get_execution_principal), db: SupabaseDataClient | None = Depends(get_execution_db)) -> ExecutionResponse:
         principal.require_scope("executions:write")
-        db = _user_db(principal)
         if principal.api_key and (str(payload.project_id) != principal.api_key.project_id or str(payload.organization_id) != principal.api_key.organization_id):
             raise HTTPException(status_code=403, detail="API key is scoped to a different project")
         if principal.user and payload.requested_by and payload.requested_by != principal.user.id:
@@ -221,13 +220,17 @@ def create_app() -> FastAPI:
             "config": spec.config, "ai_provider": spec.ai_provider, "metadata": payload.metadata,
         }
         try:
-            rows = await (SupabaseServiceClient().insert("executions", row) if principal.api_key else db.insert("executions", row))
+            if principal.api_key:
+                rows = await SupabaseServiceClient().insert("executions", row)
+            else:
+                assert db is not None
+                rows = await db.insert("executions", row)
             return ExecutionResponse.model_validate(ExecutionRecord.from_row(rows[0]).to_response())
         except SupabaseDataError as exc:
             raise _data_error(exc) from exc
 
     @app.get("/v1/executions", response_model=list[ExecutionResponse])
-    async def list_executions(organization_id: UUID = Query(...), limit: int = Query(default=50, ge=1, le=100), principal: ExecutionPrincipal = Depends(get_execution_principal)) -> list[ExecutionResponse]:
+    async def list_executions(organization_id: UUID = Query(...), limit: int = Query(default=50, ge=1, le=100), principal: ExecutionPrincipal = Depends(get_execution_principal), db: SupabaseDataClient | None = Depends(get_execution_db)) -> list[ExecutionResponse]:
         principal.require_scope("executions:read")
         if principal.api_key and str(organization_id) != principal.api_key.organization_id:
             raise HTTPException(status_code=403, detail="API key is scoped to a different organization")
@@ -235,57 +238,65 @@ def create_app() -> FastAPI:
         if principal.api_key:
             filters["project_id"] = f"eq.{principal.api_key.project_id}"
         try:
-            client = SupabaseServiceClient() if principal.api_key else _user_db(principal)
-            assert client is not None
-            rows = await client.select("executions", select=_execution_select(), filters=filters, order="created_at.desc", limit=limit)
+            if principal.api_key:
+                rows = await SupabaseServiceClient().select("executions", select=_execution_select(), filters=filters, order="created_at.desc", limit=limit)
+            else:
+                assert db is not None
+                rows = await db.select("executions", select=_execution_select(), filters=filters, order="created_at.desc", limit=limit)
             return [ExecutionResponse.model_validate(ExecutionRecord.from_row(row).to_response()) for row in rows]
         except SupabaseDataError as exc:
             raise _data_error(exc) from exc
 
-    @app.get("/v1/executions/{execution_id}", response_model=ExecutionResponse)
-    async def get_execution(execution_id: UUID, principal: ExecutionPrincipal = Depends(get_execution_principal)) -> ExecutionResponse:
-        principal.require_scope("executions:read")
-        filters = {"id": f"eq.{execution_id}"}
-        if principal.api_key:
-            filters["project_id"] = f"eq.{principal.api_key.project_id}"
-        try:
-            client = SupabaseServiceClient() if principal.api_key else _user_db(principal)
-            assert client is not None
-            rows = await client.select("executions", select=_execution_select(), filters=filters, limit=1)
-            if not rows:
-                raise HTTPException(status_code=404, detail="Execution not found")
-            return ExecutionResponse.model_validate(ExecutionRecord.from_row(rows[0]).to_response())
-        except SupabaseDataError as exc:
-            raise _data_error(exc) from exc
-
     @app.get("/v1/executions/{execution_id}/artifacts", response_model=list[ArtifactResponse])
-    async def list_artifacts(execution_id: UUID, principal: ExecutionPrincipal = Depends(get_execution_principal)) -> list[ArtifactResponse]:
+    async def list_artifacts(execution_id: UUID, principal: ExecutionPrincipal = Depends(get_execution_principal), db: SupabaseDataClient | None = Depends(get_execution_db)) -> list[ArtifactResponse]:
         principal.require_scope("artifacts:read")
         filters = {"execution_id": f"eq.{execution_id}"}
         if principal.api_key:
             filters["project_id"] = f"eq.{principal.api_key.project_id}"
         try:
-            client = SupabaseServiceClient() if principal.api_key else _user_db(principal)
-            assert client is not None
-            rows = await client.select("execution_artifacts", select=_artifact_select(), filters=filters, order="created_at.asc")
+            if principal.api_key:
+                rows = await SupabaseServiceClient().select("execution_artifacts", select=_artifact_select(), filters=filters, order="created_at.asc")
+            else:
+                assert db is not None
+                rows = await db.select("execution_artifacts", select=_artifact_select(), filters=filters, order="created_at.asc")
             return [ArtifactResponse.model_validate(row) for row in rows]
         except SupabaseDataError as exc:
             raise _data_error(exc) from exc
 
     @app.get("/v1/executions/{execution_id}/artifacts/{artifact_id}", response_model=ArtifactDownloadResponse)
-    async def get_artifact(execution_id: UUID, artifact_id: UUID, expires_in: int = Query(default=3600, ge=60, le=86400), principal: ExecutionPrincipal = Depends(get_execution_principal)) -> ArtifactDownloadResponse:
+    async def get_artifact(execution_id: UUID, artifact_id: UUID, expires_in: int = Query(default=3600, ge=60, le=86400), principal: ExecutionPrincipal = Depends(get_execution_principal), db: SupabaseDataClient | None = Depends(get_execution_db)) -> ArtifactDownloadResponse:
         principal.require_scope("artifacts:read")
         filters = {"id": f"eq.{artifact_id}", "execution_id": f"eq.{execution_id}"}
         if principal.api_key:
             filters["project_id"] = f"eq.{principal.api_key.project_id}"
         try:
-            client = SupabaseServiceClient() if principal.api_key else _user_db(principal)
-            assert client is not None
-            rows = await client.select("execution_artifacts", select=_artifact_select(), filters=filters, limit=1)
+            if principal.api_key:
+                rows = await SupabaseServiceClient().select("execution_artifacts", select=_artifact_select(), filters=filters, limit=1)
+            else:
+                assert db is not None
+                rows = await db.select("execution_artifacts", select=_artifact_select(), filters=filters, limit=1)
             if not rows:
                 raise HTTPException(status_code=404, detail="Artifact not found")
             signed_url = await SupabaseStorageClient().create_signed_url(rows[0]["storage_path"], expires_in)
             return ArtifactDownloadResponse.model_validate({**rows[0], "signed_url": signed_url, "expires_in": expires_in})
+        except SupabaseDataError as exc:
+            raise _data_error(exc) from exc
+
+    @app.get("/v1/executions/{execution_id}", response_model=ExecutionResponse)
+    async def get_execution(execution_id: UUID, principal: ExecutionPrincipal = Depends(get_execution_principal), db: SupabaseDataClient | None = Depends(get_execution_db)) -> ExecutionResponse:
+        principal.require_scope("executions:read")
+        filters = {"id": f"eq.{execution_id}"}
+        if principal.api_key:
+            filters["project_id"] = f"eq.{principal.api_key.project_id}"
+        try:
+            if principal.api_key:
+                rows = await SupabaseServiceClient().select("executions", select=_execution_select(), filters=filters, limit=1)
+            else:
+                assert db is not None
+                rows = await db.select("executions", select=_execution_select(), filters=filters, limit=1)
+            if not rows:
+                raise HTTPException(status_code=404, detail="Execution not found")
+            return ExecutionResponse.model_validate(ExecutionRecord.from_row(rows[0]).to_response())
         except SupabaseDataError as exc:
             raise _data_error(exc) from exc
 
