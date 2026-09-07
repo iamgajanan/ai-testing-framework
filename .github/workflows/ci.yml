@@ -1,3 +1,4 @@
+# Phase D autonomous verification is intentionally included in every browser matrix job.
 name: AI Testing Framework CI
 
 on:
