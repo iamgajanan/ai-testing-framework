@@ -52,6 +52,7 @@ def _install_overrides(fake: FakeDB):
         claims={"sub": str(fake.user_id)},
         access_token="token",
     )
+    assert user.claims["sub"] == user.id
     app.dependency_overrides[get_data_client] = lambda: fake
     app.dependency_overrides[get_current_user] = lambda: user
 
