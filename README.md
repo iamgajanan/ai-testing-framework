@@ -105,3 +105,29 @@ A login JSON object contains `url`, `username_selector`, `password_selector`, `s
 - Browser actions: click, type/fill, select, check/uncheck, hover, press, wait, navigation/load-state, response, upload, download, JavaScript evaluation
 - Auth/session workflows: cookies, localStorage, reusable login form
 - Browser UI workflows: alerts/dialogs, popups, tabs/pages
+- Network route mocking/stubbing
+- AI semantic validation and AI element location
+- Self-healing selectors with confidence/history
+- UI validators: presence, text, regex, URL, table, attribute, value, state, count
+- API validation from real browser network traffic
+- File upload/download validation for CSV, XLSX, JSON, PDF and common metadata
+- Visual regression screenshot diff
+- HTML/JSON/PDF reports, screenshots, step traces, failure trace/video artifacts and flaky-test history
+- AI failure analysis and deterministic fallback paths
+- AI test generation, authenticated crawling and same-origin multi-page discovery
+- Autonomous exploration, test generation and execution
+- Agentic workflow planning and realistic test-data generation
+- Parallel isolated browser workers
+- CI matrix: Python 3.10/3.11/3.12 × Chromium/Firefox/WebKit
+
+## Installation
+
+Python 3.10+ is required. Install dependencies and the Playwright browser(s), then run `python examples/demo_app.py` and an `ai-test` suite.
+
+OpenAI is optional; deterministic tests and agentic fallbacks work with `--ai-provider none`.
+
+## Roadmap
+
+Phase 1A progressively adds the SaaS foundation around the existing engine: authentication, organizations/workspaces, projects, API keys, persistent execution records and queue-backed cloud execution. Later phases add the dashboard, usage/billing, GitHub integration and enterprise controls.
+
+License: MIT
