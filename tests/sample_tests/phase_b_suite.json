@@ -6,6 +6,6 @@
     {"id":"B-003","name":"Local storage session bootstrap","url":"/auth","steps":[{"action":"set_local_storage","value":{"role":"user","phase":"B"}},{"action":"evaluate","value":"localStorage.getItem('role')"}],"validations":[{"type":"element_present","selector":"#login"}]},
     {"id":"B-004","name":"Accept browser dialog","url":"/","steps":[{"action":"accept_dialog"},{"action":"click","selector":"#alert"}],"validations":[{"type":"element_present","selector":"#alert"}]},
     {"id":"B-005","name":"Open and switch to popup tab","url":"/","steps":[{"action":"open_popup","selector":"#popup"}],"validations":[{"type":"text_contains","selector":"body","expected":"Popup Page"}]},
-    {"id":"B-006","name":"Close popup tab and return","url":"/","steps":[{"action":"close_tab"},{"action":"switch_tab","value":0}],"validations":[{"type":"text_contains","selector":"body","expected":"AI Testing Demo"}]}
+    {"id":"B-006","name":"Close popup tab and return","url":"/","steps":[{"action":"open_popup","selector":"#popup"},{"action":"close_tab"}],"validations":[{"type":"text_contains","selector":"body","expected":"AI Testing Demo"}]}
   ]
 }
