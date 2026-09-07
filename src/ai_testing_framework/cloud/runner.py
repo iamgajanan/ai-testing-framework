@@ -24,7 +24,11 @@ class IsolatedExecutionRunner:
     """
 
     def __init__(self, timeout_seconds: float | None = None) -> None:
-        self.timeout_seconds = timeout_seconds or float(os.environ.get("EXECUTION_TIMEOUT_SECONDS", "900"))
+        self.timeout_seconds = (
+            float(os.environ.get("EXECUTION_TIMEOUT_SECONDS", "900"))
+            if timeout_seconds is None
+            else float(timeout_seconds)
+        )
         if self.timeout_seconds <= 0:
             raise ValueError("Execution timeout must be greater than zero")
 
