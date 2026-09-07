@@ -37,8 +37,13 @@ export async function uploadSuite(formData: FormData) {
 
   if (!result.ok) {
     console.error('Suite upload failed:', result.status, result.data)
-    const error = result.status === 401 || result.status === 403 ? 'not_authorized' : result.status === 503 ? 'api_unreachable' : 'upload_failed'
-    redirect(`/dashboard/suites?project=${projectId}&error=${error}`)
+    if (result.status === 401 || result.status === 403) {
+      redirect(`/dashboard/suites?project=${projectId}&error=not_authorized`)
+    }
+    if (result.status === 503) {
+      redirect(`/dashboard/suites?project=${projectId}&error=backend_config`)
+    }
+    redirect(`/dashboard/suites?project=${projectId}&error=upload_failed`)
   }
 
   revalidatePath('/dashboard/suites')
