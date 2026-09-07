@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import Enum
 from typing import Any
 
 
-class ExecutionStatus(StrEnum):
+class ExecutionStatus(str, Enum):
     QUEUED = "queued"
     RUNNING = "running"
     PASSED = "passed"
