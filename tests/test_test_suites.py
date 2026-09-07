@@ -63,7 +63,7 @@ def test_test_suite_routes_are_registered(monkeypatch):
     monkeypatch.setattr("ai_testing_framework.server.test_suites.SupabaseStorageClient", FakeStorage)
     try:
         client = TestClient(app)
-        paths = {route.path for route in app.routes}
+        paths = {route.path for route in app.routes if hasattr(route, "path")}
         assert f"/v1/projects/{{project_id}}/test-suites" in paths
         response = client.post(
             f"/v1/projects/{fake.project_id}/test-suites",
