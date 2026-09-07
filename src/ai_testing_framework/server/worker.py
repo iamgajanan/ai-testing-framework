@@ -4,6 +4,9 @@ import argparse
 import asyncio
 import logging
 import os
+import shutil
+import tempfile
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -29,16 +32,21 @@ class ExecutionWorker:
         if not rows or not rows[0]:
             return False
         record = ExecutionRecord.from_row(rows[0])
-        request = ExecutionRequest(
-            organization_id=str(record.organization_id),
-            project_id=str(record.project_id),
-            requested_by=str(record.requested_by),
-            spec=record.spec,
-            metadata=record.metadata,
-        )
+        workspace = Path(tempfile.mkdtemp(prefix=f"ai-test-{record.id}-", dir=os.environ.get("WORKER_TMP_DIR")))
         try:
+            suite_path = workspace / Path(record.spec.suite_path).name
+            suite_data = await self.storage.download_bytes(record.spec.suite_path, bucket="test-suites")
+            suite_path.write_bytes(suite_data)
+            output_dir = workspace / "reports"
+            request = ExecutionRequest(
+                organization_id=str(record.organization_id),
+                project_id=str(record.project_id),
+                requested_by=str(record.requested_by),
+                spec=replace(record.spec, suite_path=str(suite_path), output_dir=str(output_dir)),
+                metadata=record.metadata,
+            )
             result = await asyncio.to_thread(self.engine.execute, request)
-            artifacts = await self._persist_artifacts(record)
+            artifacts = await self._persist_artifacts(record, output_dir)
             result["artifacts"] = artifacts
             terminal = result.get("status", ExecutionStatus.FAILED)
             if isinstance(terminal, ExecutionStatus):
@@ -60,9 +68,10 @@ class ExecutionWorker:
             logger.exception("Unexpected execution %s failure", record.id)
             await self.db.complete_execution(str(record.id), ExecutionStatus.FAILED.value, None, str(exc))
             return True
+        finally:
+            shutil.rmtree(workspace, ignore_errors=True)
 
-    async def _persist_artifacts(self, record: ExecutionRecord) -> list[dict[str, Any]]:
-        output_root = Path(record.spec.output_dir).resolve()
+    async def _persist_artifacts(self, record: ExecutionRecord, output_root: Path) -> list[dict[str, Any]]:
         if not output_root.exists() or not output_root.is_dir():
             return []
         artifacts: list[dict[str, Any]] = []
