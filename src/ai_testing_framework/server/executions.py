@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -18,6 +19,9 @@ class ExecutionRecord:
     metadata: dict[str, Any]
     result: dict[str, Any] | None = None
     error: str | None = None
+    created_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> "ExecutionRecord":
@@ -42,6 +46,9 @@ class ExecutionRecord:
             metadata=row.get("metadata") or {},
             result=row.get("result"),
             error=row.get("error"),
+            created_at=_parse_datetime(row.get("created_at")),
+            started_at=_parse_datetime(row.get("started_at")),
+            finished_at=_parse_datetime(row.get("finished_at")),
         )
 
     def to_response(self) -> dict[str, Any]:
@@ -63,4 +70,15 @@ class ExecutionRecord:
             "metadata": self.metadata,
             "result": self.result,
             "error": self.error,
+            "created_at": self.created_at,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
         }
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
