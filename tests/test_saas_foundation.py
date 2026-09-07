@@ -1,7 +1,6 @@
 from fastapi.testclient import TestClient
 
-from ai_testing_framework.server.api_keys import APIKeyPrincipal
-from ai_testing_framework.server.app import app
+from ai_testing_framework.server.app import app, get_execution_db
 from ai_testing_framework.server.auth import AuthenticatedUser, get_current_user
 from ai_testing_framework.server.db import get_data_client
 from ai_testing_framework.server.principal import ExecutionPrincipal, get_execution_principal
@@ -16,7 +15,7 @@ FAKE_USER = AuthenticatedUser(
     access_token="test-token",
 )
 ORG_ID = "00000000-0000-0000-0000-000000000010"
-PROJECT_ID = "00000000-0000-0000-000000000020"
+PROJECT_ID = "00000000-0000-0000-0000-000000000020"
 EXECUTION_ID = "00000000-0000-0000-0000-000000000030"
 KEY_ID = "00000000-0000-0000-0000-000000000040"
 ARTIFACT_ID = "00000000-0000-0000-0000-000000000050"
@@ -81,9 +80,11 @@ class FakeDataClient:
         }]
 
 
+FAKE_DB = FakeDataClient()
 app.dependency_overrides[get_current_user] = lambda: FAKE_USER
-app.dependency_overrides[get_data_client] = lambda: FakeDataClient()
+app.dependency_overrides[get_data_client] = lambda: FAKE_DB
 app.dependency_overrides[get_execution_principal] = lambda: ExecutionPrincipal(user=FAKE_USER)
+app.dependency_overrides[get_execution_db] = lambda: FAKE_DB
 
 
 def teardown_module():
@@ -108,8 +109,9 @@ def test_protected_endpoint_requires_authentication():
     response = client.get("/v1/me")
     assert response.status_code == 401
     app.dependency_overrides[get_current_user] = lambda: FAKE_USER
-    app.dependency_overrides[get_data_client] = lambda: FakeDataClient()
+    app.dependency_overrides[get_data_client] = lambda: FAKE_DB
     app.dependency_overrides[get_execution_principal] = lambda: ExecutionPrincipal(user=FAKE_USER)
+    app.dependency_overrides[get_execution_db] = lambda: FAKE_DB
 
 
 def test_me_returns_authenticated_user():
