@@ -6,7 +6,7 @@ import logging
 import os
 from typing import Any
 
-from ..cloud.contracts import ExecutionRequest, ExecutionSpec, ExecutionStatus
+from ..cloud.contracts import ExecutionRequest, ExecutionStatus
 from ..cloud.engine import LocalEngineAdapter
 from .db import SupabaseDataError, SupabaseWorkerClient
 from .executions import ExecutionRecord
@@ -34,14 +34,21 @@ class ExecutionWorker:
         )
         try:
             result = await asyncio.to_thread(self.engine.execute, request)
-            terminal = str(result.get("status", ExecutionStatus.FAILED))
-            if terminal not in {ExecutionStatus.PASSED, ExecutionStatus.FAILED}:
-                terminal = ExecutionStatus.FAILED
-            await self.db.complete_execution(str(record.id), terminal, _jsonable(result), None if terminal == ExecutionStatus.PASSED else "One or more tests failed")
+            terminal = result.get("status", ExecutionStatus.FAILED)
+            if isinstance(terminal, ExecutionStatus):
+                terminal = terminal.value
+            else:
+                terminal = str(terminal)
+            if terminal not in {ExecutionStatus.PASSED.value, ExecutionStatus.FAILED.value}:
+                terminal = ExecutionStatus.FAILED.value
+            await self.db.complete_execution(
+                str(record.id), terminal, _jsonable(result),
+                None if terminal == ExecutionStatus.PASSED.value else "One or more tests failed",
+            )
             return True
         except Exception as exc:  # noqa: BLE001 - worker must persist execution failures
             logger.exception("Execution %s failed", record.id)
-            await self.db.complete_execution(str(record.id), ExecutionStatus.FAILED, None, str(exc))
+            await self.db.complete_execution(str(record.id), ExecutionStatus.FAILED.value, None, str(exc))
             return True
 
     async def run_forever(self) -> None:
@@ -61,7 +68,7 @@ def _jsonable(value: Any) -> Any:
         return {str(k): _jsonable(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [_jsonable(v) for v in value]
-    if isinstance(value, (ExecutionStatus,)):
+    if isinstance(value, ExecutionStatus):
         return value.value
     return value
 
