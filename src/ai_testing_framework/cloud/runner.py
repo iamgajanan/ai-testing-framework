@@ -8,7 +8,7 @@ import sys
 from dataclasses import asdict
 from typing import Any
 
-from .contracts import ExecutionRequest, ExecutionSpec, ExecutionStatus
+from .contracts import ExecutionRequest, ExecutionSpec
 
 
 class ExecutionRunnerError(RuntimeError):
@@ -33,30 +33,33 @@ class IsolatedExecutionRunner:
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         command = [sys.executable, "-m", "ai_testing_framework.cloud.execution_process"]
-        kwargs: dict[str, Any] = {
-            "input": payload,
-            "text": True,
-            "capture_output": True,
-            "timeout": self.timeout_seconds,
-            "env": env,
-        }
-        if os.name != "nt":
-            kwargs["start_new_session"] = True
-
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+            start_new_session=os.name != "nt",
+        )
         try:
-            completed = subprocess.run(command, **kwargs)
+            stdout, stderr = process.communicate(payload, timeout=self.timeout_seconds)
         except subprocess.TimeoutExpired as exc:
+            _terminate_process_tree(process)
+            process.communicate()
             raise ExecutionRunnerError(
                 f"Execution timed out after {self.timeout_seconds:.0f} seconds"
             ) from exc
         except OSError as exc:
-            raise ExecutionRunnerError(f"Unable to start execution process: {exc}") from exc
+            _terminate_process_tree(process)
+            process.communicate()
+            raise ExecutionRunnerError(f"Execution process failed: {exc}") from exc
 
-        if completed.returncode != 0:
-            detail = (completed.stderr or completed.stdout or "execution process failed").strip()
+        if process.returncode != 0:
+            detail = (stderr or stdout or "execution process failed").strip()
             raise ExecutionRunnerError(detail[-4000:])
         try:
-            result = json.loads(completed.stdout)
+            result = json.loads(stdout)
         except json.JSONDecodeError as exc:
             raise ExecutionRunnerError("Execution process returned invalid JSON") from exc
         if not isinstance(result, dict):
@@ -64,18 +67,28 @@ class IsolatedExecutionRunner:
         return result
 
 
-def terminate_process_group(process: subprocess.Popen[Any]) -> None:
-    """Best-effort cleanup helper for callers managing a Popen directly."""
+def _terminate_process_tree(process: subprocess.Popen[Any]) -> None:
+    """Terminate the child and its descendants on timeout/fatal process errors."""
+    if process.poll() is not None:
+        return
     if os.name != "nt":
         try:
             os.killpg(process.pid, signal.SIGTERM)
-            return
         except ProcessLookupError:
             return
-    try:
+    else:
         process.terminate()
-    except ProcessLookupError:
-        pass
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        if os.name != "nt":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                return
+        else:
+            process.kill()
+        process.wait(timeout=5)
 
 
 def _request_to_dict(request: ExecutionRequest) -> dict[str, Any]:
@@ -89,8 +102,8 @@ def _request_to_dict(request: ExecutionRequest) -> dict[str, Any]:
 
 
 def request_from_dict(payload: dict[str, Any]) -> ExecutionRequest:
-    spec_data = payload.get("spec")
-    if not isinstance(spec_data, dict):
+    spec_data = dict(payload.get("spec") or {})
+    if not spec_data:
         raise ValueError("Execution payload is missing spec")
     spec_data["formats"] = tuple(spec_data.get("formats") or ("html", "json"))
     spec = ExecutionSpec(**spec_data)
