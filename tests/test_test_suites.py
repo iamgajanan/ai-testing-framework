@@ -46,7 +46,12 @@ class FakeStorage:
 
 
 def _install_overrides(fake: FakeDB):
-    user = AuthenticatedUser(id=str(fake.user_id), email="user@example.com", access_token="token")
+    user = AuthenticatedUser(
+        id=str(fake.user_id),
+        email="user@example.com",
+        claims={"sub": str(fake.user_id)},
+        access_token="token",
+    )
     app.dependency_overrides[get_data_client] = lambda: fake
     app.dependency_overrides[get_current_user] = lambda: user
 
