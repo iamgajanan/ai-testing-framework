@@ -13,6 +13,9 @@ setup(
         "fastapi>=0.115,<1", "uvicorn[standard]>=0.30,<1", "httpx>=0.27,<1",
         "PyJWT[crypto]>=2.10,<3",
     ],
-    entry_points={"console_scripts": ["ai-test=ai_testing_framework.cli:main"]},
+    entry_points={"console_scripts": [
+        "ai-test=ai_testing_framework.cli:main",
+        "ai-test-worker=ai_testing_framework.server.worker:main",
+    ]},
     python_requires=">=3.10",
 )
