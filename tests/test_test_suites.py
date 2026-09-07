@@ -38,10 +38,15 @@ class FakeDB:
 
 
 class FakeStorage:
+    def __init__(self, access_token=None):
+        self.access_token = access_token
+
     async def upload_bytes(self, data, filename, storage_path, content_type, *, bucket="test-suites"):
+        assert self.access_token == "token"
         return StoredArtifact(filename, storage_path, content_type or "application/json", len(data))
 
     async def create_signed_url(self, storage_path, expires_in=3600, bucket="execution-artifacts"):
+        assert self.access_token == "token"
         return f"https://storage.example/signed/{storage_path}?expires={expires_in}"
 
 
