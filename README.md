@@ -2,6 +2,25 @@
 
 A generic Python + Playwright framework for testing arbitrary web applications from **JSON, Markdown, CSV, or XLSX** test definitions. It combines deterministic browser assertions with optional OpenAI semantic validation, AI element location, self-healing selectors, diagnostics, reporting, parallel execution, multi-page generation, Phase C agentic capabilities, and Phase D autonomous testing.
 
+## SaaS foundation
+
+The framework now includes a thin SaaS API boundary without changing the existing testing engine. The API lives under `ai_testing_framework.server`, while `ai_testing_framework.cloud` contains engine-neutral execution contracts and an adapter around the existing `TestRunner`.
+
+Run the API locally with:
+
+```bash
+uvicorn ai_testing_framework.server.app:app --host 127.0.0.1 --port 8001
+```
+
+Health endpoints:
+
+```text
+GET /health
+GET /ready
+```
+
+The initial `POST /v1/executions` endpoint validates the SaaS execution contract and returns `202 Accepted`. Queue-backed execution, persistence, authentication and tenant authorization are intentionally added in the next Phase 1A steps.
+
 ## Phase D — Autonomous testing
 
 Phase D adds the first autonomous end-to-end workflow. Instead of starting with a hand-authored test file, the framework can explore a live application, discover same-origin pages, generate executable tests from observed UI state, optionally plan against a testing goal, execute the generated suite, and produce the normal HTML/JSON reports.
@@ -82,6 +101,6 @@ OpenAI is optional; deterministic tests and agentic fallbacks work with `--ai-pr
 
 ## Roadmap
 
-Phase D establishes the autonomous testing loop. Future enhancements can add richer reasoning, vision-based validation, broader JSON Schema support, and deeper workflow planning without changing the deterministic execution core.
+Phase 1A progressively adds the SaaS foundation around the existing engine: authentication, organizations/workspaces, projects, API keys, persistent execution records and queue-backed cloud execution. Later phases add the dashboard, usage/billing, GitHub integration and enterprise controls.
 
 License: MIT
