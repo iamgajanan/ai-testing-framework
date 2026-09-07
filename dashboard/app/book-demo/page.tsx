@@ -1,0 +1,6 @@
+'use client'
+
+import { FormEvent, useState } from 'react'
+import Link from 'next/link'
+
+export default function BookDemoPage(){const [sent,setSent]=useState(false);function submit(e:FormEvent){e.preventDefault();setSent(true)}return <main><header className="container nav"><Link className="brand" href="/"><span className="brand-mark">AI</span> Universal AI Testing</Link><div className="nav-actions"><Link className="btn btn-ghost" href="/login">Log in</Link><Link className="btn btn-primary" href="/signup">Start free trial</Link></div></header><main className="auth-shell"><div className="auth-card"><span className="eyebrow">Talk to us</span><h1>Book a demo</h1><p>Tell us about your team and QA workflow. We will follow up to arrange a product walkthrough.</p>{sent?<div className="form-success">Thanks. Your request is captured for the demo workflow. We will follow up shortly.</div>:<form onSubmit={submit}><div className="field"><label>Name</label><input required /></div><div className="field"><label>Work email</label><input type="email" required /></div><div className="field"><label>Company</label><input required /></div><div className="field"><label>What are you testing?</label><textarea rows={4} required /></div><button className="btn btn-primary" style={{width:'100%'}}>Request demo</button></form>}</div></main></main>}
