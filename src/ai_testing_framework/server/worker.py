@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ..cloud.contracts import ExecutionRequest, ExecutionStatus
-from ..cloud.engine import LocalEngineAdapter
+from ..cloud.runner import ExecutionRunnerError, IsolatedExecutionRunner
 from .db import SupabaseDataError, SupabaseServiceClient, SupabaseWorkerClient
 from .executions import ExecutionRecord
 from .storage import SupabaseStorageClient
@@ -22,7 +22,7 @@ class ExecutionWorker:
         self.db = SupabaseWorkerClient()
         self.service = SupabaseServiceClient()
         self.storage = SupabaseStorageClient()
-        self.engine = LocalEngineAdapter()
+        self.engine = IsolatedExecutionRunner()
 
     async def run_once(self) -> bool:
         rows = await self.db.claim_next_execution()
@@ -52,8 +52,12 @@ class ExecutionWorker:
                 None if terminal == ExecutionStatus.PASSED.value else "One or more tests failed",
             )
             return True
-        except Exception as exc:  # noqa: BLE001 - worker must persist execution failures
+        except (ExecutionRunnerError, SupabaseDataError, OSError) as exc:
             logger.exception("Execution %s failed", record.id)
+            await self.db.complete_execution(str(record.id), ExecutionStatus.FAILED.value, None, str(exc))
+            return True
+        except Exception as exc:  # noqa: BLE001 - worker must persist execution failures
+            logger.exception("Unexpected execution %s failure", record.id)
             await self.db.complete_execution(str(record.id), ExecutionStatus.FAILED.value, None, str(exc))
             return True
 

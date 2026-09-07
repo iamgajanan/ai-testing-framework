@@ -1,0 +1,24 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    WORKER_POLL_SECONDS=2 \
+    EXECUTION_TIMEOUT_SECONDS=900
+
+WORKDIR /app
+
+COPY requirements.txt setup.py README.md ./
+COPY src ./src
+
+RUN python -m pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir -e . \
+    && playwright install --with-deps chromium firefox webkit \
+    && useradd --create-home --uid 10001 worker \
+    && mkdir -p /app/reports \
+    && chown -R worker:worker /app
+
+USER worker
+
+ENTRYPOINT ["ai-test-worker"]

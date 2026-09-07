@@ -126,7 +126,11 @@ class PlaywrightEngine:
         if action in {'switch_tab','switch_page'}:return self._switch_tab(value)
         if action in {'close_tab','close_page'}:
             if len(self.context.pages)<=1:raise ValueError('Cannot close the only browser tab')
-            self.page.close();return self._switch_tab('last')
+            current=self.page
+            remaining=[page for page in self.context.pages if page is not current]
+            current.close()
+            target=remaining[-1]
+            target.bring_to_front();self.page=target;self.page.set_default_timeout(self.timeout);return target
         if action in {'press','keyboard'} and not selector and not description:self.page.keyboard.press(value_text);return
         if action in {'scroll','scroll_to'}:
             import json as _json

@@ -1,0 +1,24 @@
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env.worker
+    environment:
+      WORKER_POLL_SECONDS: ${WORKER_POLL_SECONDS:-2}
+      EXECUTION_TIMEOUT_SECONDS: ${EXECUTION_TIMEOUT_SECONDS:-900}
+    mem_limit: ${WORKER_MEMORY_LIMIT:-2g}
+    cpus: ${WORKER_CPUS:-2}
+    pids_limit: ${WORKER_PIDS_LIMIT:-256}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - worker-reports:/app/reports
+
+volumes:
+  worker-reports:
