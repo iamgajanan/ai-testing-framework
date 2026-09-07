@@ -15,6 +15,21 @@ from .db import SupabaseDataError
 BUCKET = "execution-artifacts"
 
 
+def _publishable_key() -> str:
+    """Return the configured browser-safe Supabase key.
+
+    Supabase projects may expose either the newer publishable key name or the
+    legacy anon key name. Supporting both keeps existing local deployments
+    working without weakening the server-side authorization checks.
+    """
+    return os.environ.get("SUPABASE_PUBLISHABLE_KEY", "") or os.environ.get("SUPABASE_ANON_KEY", "")
+
+
+def _service_role_key() -> str:
+    """Return the configured server-only Supabase privileged key."""
+    return os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "") or os.environ.get("SUPABASE_SECRET_KEY", "")
+
+
 @dataclass(frozen=True)
 class StoredArtifact:
     name: str
@@ -37,14 +52,22 @@ class SupabaseStorageClient:
             raise SupabaseDataError("SUPABASE_URL is not configured", 503)
 
         if access_token:
-            key = os.environ.get("SUPABASE_PUBLISHABLE_KEY", "")
+            key = _publishable_key()
             if not key:
-                raise SupabaseDataError("SUPABASE_PUBLISHABLE_KEY is not configured", 503)
+                raise SupabaseDataError(
+                    "Supabase client key is not configured. Set SUPABASE_PUBLISHABLE_KEY "
+                    "or SUPABASE_ANON_KEY in the FastAPI environment.",
+                    503,
+                )
             self._headers = {"apikey": key, "Authorization": f"Bearer {access_token}"}
         else:
-            key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+            key = _service_role_key()
             if not key:
-                raise SupabaseDataError("SUPABASE_SERVICE_ROLE_KEY is not configured for worker storage", 503)
+                raise SupabaseDataError(
+                    "Supabase server key is not configured. Set SUPABASE_SERVICE_ROLE_KEY "
+                    "or SUPABASE_SECRET_KEY in the worker environment.",
+                    503,
+                )
             self._headers = {"apikey": key, "Authorization": f"Bearer {key}"}
         self._url = f"{url}/storage/v1"
 
