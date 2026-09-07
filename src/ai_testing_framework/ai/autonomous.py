@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from .agentic import AgenticAI
 from .test_generator import TestGenerator
@@ -32,17 +33,18 @@ class AutonomousTester:
         out.mkdir(parents=True, exist_ok=True)
         suite_path = out / "generated_suite.json"
         manifest_path = out / "autonomous_run.json"
+        effective_base_url = base_url or self._origin(url)
 
         generator = TestGenerator(self.provider, self.model)
         if login:
             generated = generator.generate_authenticated(
                 url, str(suite_path), login, browser=browser,
-                base_url=base_url, max_pages=max_pages,
+                base_url=effective_base_url, max_pages=max_pages,
             )
         else:
             generated = generator.generate(
                 url, str(suite_path), browser=browser,
-                base_url=base_url, max_pages=max_pages,
+                base_url=effective_base_url, max_pages=max_pages,
             )
 
         suite = json.loads(Path(generated).read_text(encoding="utf-8"))
@@ -53,6 +55,7 @@ class AutonomousTester:
 
         manifest = {
             "url": url,
+            "base_url": effective_base_url,
             "goal": goal,
             "browser": browser,
             "max_pages": max_pages,
@@ -62,7 +65,7 @@ class AutonomousTester:
         }
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-        runner = TestRunner(base_url=base_url)
+        runner = TestRunner(base_url=effective_base_url)
         runner.set_ai_provider(self.provider)
         results = runner.run(
             str(suite_path), browser=browser, output_dir=str(out),
@@ -77,3 +80,10 @@ class AutonomousTester:
             "passed": passed,
             "failed": len(results) - passed,
         }
+
+    @staticmethod
+    def _origin(url: str) -> str:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Autonomous testing requires an absolute http(s) URL")
+        return f"{parsed.scheme}://{parsed.netloc}"
