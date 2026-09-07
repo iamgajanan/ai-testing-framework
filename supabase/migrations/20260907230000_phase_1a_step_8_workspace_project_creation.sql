@@ -17,7 +17,7 @@ begin
   if workspace_name is null or char_length(trim(workspace_name)) < 2 or char_length(trim(workspace_name)) > 120 then raise exception 'Workspace name must be between 2 and 120 characters' using errcode = '22023'; end if;
   if project_name is null or char_length(trim(project_name)) < 2 or char_length(trim(project_name)) > 120 then raise exception 'Project name must be between 2 and 120 characters' using errcode = '22023'; end if;
 
-  workspace_slug := lower(regexp_replace(trim(workspace_name), '[^a-z0-9]+', '-', 'g'));
+  workspace_slug := lower(regexp_replace(trim(workspace_name), '[^a-z0-9]+', '-', 'gi'));
   workspace_slug := trim(both '-' from workspace_slug);
   if workspace_slug = '' then workspace_slug := 'workspace'; end if;
   workspace_slug := left(workspace_slug, 80);
@@ -39,7 +39,7 @@ begin
     end;
   end if;
 
-  base_slug := lower(regexp_replace(trim(project_name), '[^a-z0-9]+', '-', 'g'));
+  base_slug := lower(regexp_replace(trim(project_name), '[^a-z0-9]+', '-', 'gi'));
   base_slug := trim(both '-' from base_slug);
   if base_slug = '' then base_slug := 'project'; end if;
   base_slug := left(base_slug, 80);
