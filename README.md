@@ -6,6 +6,22 @@ A generic Python + Playwright framework for testing arbitrary web applications f
 
 The framework now includes a thin SaaS API boundary without changing the existing testing engine. The API lives under `ai_testing_framework.server`, while `ai_testing_framework.cloud` contains engine-neutral execution contracts and an adapter around the existing `TestRunner`.
 
+Phase 1A Step 2 adds the multi-tenant identity and persistence foundation:
+
+- Supabase Auth JWT verification for protected API routes.
+- PostgreSQL organizations, organization memberships, and projects.
+- Owner membership is created automatically when a user creates an organization.
+- Row Level Security (RLS) isolates organizations, memberships, and projects by authenticated tenant membership.
+- Tenant API endpoints for the current user, organizations, and projects.
+- Publishable-key + user-token access to Supabase Data API; no service-role/secret key is used by the API layer.
+
+Configure these server-side environment variables before using tenant endpoints:
+
+```text
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+```
+
 Run the API locally with:
 
 ```bash
@@ -19,7 +35,18 @@ GET /health
 GET /ready
 ```
 
-The initial `POST /v1/executions` endpoint validates the SaaS execution contract and returns `202 Accepted`. Queue-backed execution, persistence, authentication and tenant authorization are intentionally added in the next Phase 1A steps.
+Authenticated endpoints:
+
+```text
+GET  /v1/me
+GET  /v1/organizations
+POST /v1/organizations
+GET  /v1/projects?organization_id=<uuid>
+POST /v1/projects
+POST /v1/executions
+```
+
+The execution endpoint is now authenticated, but queue-backed execution and persistent execution records remain the next Phase 1A step.
 
 ## Phase D — Autonomous testing
 
