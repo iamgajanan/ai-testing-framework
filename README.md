@@ -1,6 +1,34 @@
 # Universal AI Testing Framework
 
-A generic Python + Playwright framework for testing arbitrary web applications from **JSON, Markdown, CSV, or XLSX** test definitions. It combines deterministic browser assertions with optional OpenAI semantic validation, AI element location, self-healing selectors, diagnostics, reporting, parallel execution, multi-page generation, and Phase C agentic capabilities.
+A generic Python + Playwright framework for testing arbitrary web applications from **JSON, Markdown, CSV, or XLSX** test definitions. It combines deterministic browser assertions with optional OpenAI semantic validation, AI element location, self-healing selectors, diagnostics, reporting, parallel execution, multi-page generation, Phase C agentic capabilities, and Phase D autonomous testing.
+
+## Phase D — Autonomous testing
+
+Phase D adds the first autonomous end-to-end workflow. Instead of starting with a hand-authored test file, the framework can explore a live application, discover same-origin pages, generate executable tests from observed UI state, optionally plan against a testing goal, execute the generated suite, and produce the normal HTML/JSON reports.
+
+```bash
+ai-test autonomous \
+  --url http://127.0.0.1:8000 \
+  --output reports/autonomous \
+  --max-pages 5 \
+  --goal "Explore the application and verify its primary user-facing workflows" \
+  --ai-provider none
+```
+
+The autonomous command can also reuse the authenticated crawler contract:
+
+```bash
+ai-test autonomous --url http://127.0.0.1:8000/auth \
+  --login-json login.json --max-pages 5 --ai-provider none
+```
+
+The run writes:
+
+- `generated_suite.json` — executable tests discovered from the application.
+- `autonomous_run.json` — exploration/goal manifest and generated test count.
+- `test_report.html` / `test_report.json` — standard framework results.
+
+`--ai-provider none` remains fully deterministic. OpenAI is optional and can be used for the workflow-planning portion of an autonomous run.
 
 ## Phase C — Agentic capabilities
 
@@ -41,6 +69,7 @@ A login JSON object contains `url`, `username_selector`, `password_selector`, `s
 - HTML/JSON/PDF reports, screenshots, step traces, failure trace/video artifacts and flaky-test history
 - AI failure analysis and deterministic fallback paths
 - AI test generation, authenticated crawling and same-origin multi-page discovery
+- Autonomous exploration, test generation and execution
 - Agentic workflow planning and realistic test-data generation
 - Parallel isolated browser workers
 - CI matrix: Python 3.10/3.11/3.12 × Chromium/Firefox/WebKit
@@ -53,6 +82,6 @@ OpenAI is optional; deterministic tests and agentic fallbacks work with `--ai-pr
 
 ## Roadmap
 
-Phase C completes the planned agentic foundation. Future enhancements can build on it with richer autonomous exploration, vision-based validation, broader JSON Schema support, and deeper workflow planning.
+Phase D establishes the autonomous testing loop. Future enhancements can add richer reasoning, vision-based validation, broader JSON Schema support, and deeper workflow planning without changing the deterministic execution core.
 
 License: MIT
