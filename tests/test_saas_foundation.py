@@ -7,31 +7,45 @@ from ai_testing_framework.server.db import get_data_client
 
 client = TestClient(app)
 
-
 FAKE_USER = AuthenticatedUser(
     id="00000000-0000-0000-0000-000000000001",
     email="test@example.com",
     claims={"sub": "00000000-0000-0000-0000-000000000001"},
     access_token="test-token",
 )
+ORG_ID = "00000000-0000-0000-0000-000000000010"
+PROJECT_ID = "00000000-0000-0000-0000-000000000020"
+EXECUTION_ID = "00000000-0000-0000-0000-000000000030"
 
 
 class FakeDataClient:
-    async def select(self, table, *, select="*", filters=None, order=None):
+    async def select(self, table, *, select="*", filters=None, order=None, limit=None):
         if table == "organizations":
-            return [{"id": "00000000-0000-0000-0000-000000000010", "name": "Test Org", "slug": "test-org"}]
+            return [{"id": ORG_ID, "name": "Test Org", "slug": "test-org"}]
         if table == "projects":
-            assert filters == {"organization_id": "eq.00000000-0000-0000-0000-000000000010"}
-            return [{"id": "00000000-0000-0000-0000-000000000020", "name": "Test Project", "slug": "test-project"}]
+            assert filters == {"organization_id": f"eq.{ORG_ID}"}
+            return [{"id": PROJECT_ID, "organization_id": ORG_ID, "name": "Test Project", "slug": "test-project"}]
+        if table == "executions":
+            return [{
+                "id": EXECUTION_ID, "organization_id": ORG_ID, "project_id": PROJECT_ID,
+                "requested_by": FAKE_USER.id, "status": "queued", "suite_path": "suite.json",
+                "base_url": "http://127.0.0.1:8000", "browser": "chromium", "output_dir": "reports",
+                "formats": ["html", "json"], "workers": 1, "config": None, "ai_provider": None,
+                "metadata": {"source": "test"}, "result": None, "error": None,
+            }]
         return []
 
     async def insert(self, table, payload):
         if table == "organizations":
             assert payload["created_by"] == FAKE_USER.id
-            return [{"id": "00000000-0000-0000-0000-000000000010", **payload}]
+            return [{"id": ORG_ID, **payload}]
         if table == "projects":
             assert payload["created_by"] == FAKE_USER.id
-            return [{"id": "00000000-0000-0000-0000-000000000020", **payload}]
+            return [{"id": PROJECT_ID, **payload}]
+        if table == "executions":
+            assert payload["requested_by"] == FAKE_USER.id
+            assert payload["status"] == "queued"
+            return [{"id": EXECUTION_ID, **payload}]
         return []
 
 
@@ -79,66 +93,69 @@ def test_organization_and_project_endpoints_use_authenticated_tenant_context():
     assert organizations.status_code == 200
     assert organizations.json()[0]["slug"] == "test-org"
 
-    project = client.post(
-        "/v1/projects",
-        json={
-            "organization_id": "00000000-0000-0000-0000-000000000010",
-            "name": "Test Project",
-            "slug": "test-project",
-        },
-    )
+    project = client.post("/v1/projects", json={"organization_id": ORG_ID, "name": "Test Project", "slug": "test-project"})
     assert project.status_code == 201
     assert project.json()["created_by"] == FAKE_USER.id
 
-    projects = client.get(
-        "/v1/projects",
-        params={"organization_id": "00000000-0000-0000-0000-000000000010"},
-    )
+    projects = client.get("/v1/projects", params={"organization_id": ORG_ID})
     assert projects.status_code == 200
     assert projects.json()[0]["slug"] == "test-project"
 
 
-def test_execution_contract_is_accepted_for_authenticated_user():
-    response = client.post(
-        "/v1/executions",
-        json={
-            "organization_id": "org-test",
-            "project_id": "project-test",
-            "requested_by": "user-test",
-            "spec": {
-                "suite_path": "tests/sample_tests/test_suite.json",
-                "base_url": "http://127.0.0.1:8000",
-                "browser": "chromium",
-                "formats": ["html", "json"],
-                "workers": 1,
-                "ai_provider": "none",
-            },
+def _execution_payload():
+    return {
+        "organization_id": ORG_ID,
+        "project_id": PROJECT_ID,
+        "spec": {
+            "suite_path": "tests/sample_tests/test_suite.json",
+            "base_url": "http://127.0.0.1:8000",
+            "browser": "chromium",
+            "formats": ["html", "json"],
+            "workers": 1,
+            "ai_provider": "none",
         },
-    )
+        "metadata": {"source": "test"},
+    }
+
+
+def test_execution_is_persisted_as_queued():
+    response = client.post("/v1/executions", json=_execution_payload())
     assert response.status_code == 202
-    assert response.json()["status"] == "accepted"
+    body = response.json()
+    assert body["id"] == EXECUTION_ID
+    assert body["status"] == "queued"
+    assert body["requested_by"] == FAKE_USER.id
+    assert body["metadata"] == {"source": "test"}
+
+
+def test_execution_history_is_tenant_scoped():
+    response = client.get("/v1/executions", params={"organization_id": ORG_ID})
+    assert response.status_code == 200
+    assert response.json()[0]["status"] == "queued"
+
+
+def test_execution_detail_is_tenant_scoped():
+    response = client.get(f"/v1/executions/{EXECUTION_ID}")
+    assert response.status_code == 200
+    assert response.json()["id"] == EXECUTION_ID
+
+
+def test_execution_rejects_requested_by_impersonation():
+    payload = _execution_payload()
+    payload["requested_by"] = "00000000-0000-0000-0000-000000000099"
+    response = client.post("/v1/executions", json=payload)
+    assert response.status_code == 403
 
 
 def test_execution_contract_rejects_unknown_browser():
-    response = client.post(
-        "/v1/executions",
-        json={
-            "organization_id": "org-test",
-            "project_id": "project-test",
-            "spec": {"suite_path": "suite.json", "browser": "safari"},
-        },
-    )
+    payload = _execution_payload()
+    payload["spec"]["browser"] = "safari"
+    response = client.post("/v1/executions", json=payload)
     assert response.status_code == 422
 
 
 def test_execution_contract_rejects_extra_fields():
-    response = client.post(
-        "/v1/executions",
-        json={
-            "organization_id": "org-test",
-            "project_id": "project-test",
-            "unexpected": True,
-            "spec": {"suite_path": "suite.json"},
-        },
-    )
+    payload = _execution_payload()
+    payload["unexpected"] = True
+    response = client.post("/v1/executions", json=payload)
     assert response.status_code == 422
