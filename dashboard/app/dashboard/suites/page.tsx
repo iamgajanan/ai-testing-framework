@@ -21,17 +21,19 @@ export default async function SuitesPage({ searchParams }: { searchParams: Promi
 
   const errorMessage = params.error === 'api_unreachable'
     ? 'Testing API is not reachable. Start FastAPI on port 8000/8001 or set AI_TESTING_API_URL.'
-    : params.error === 'file_too_large'
-      ? 'This suite exceeds the 10 MB upload limit.'
-      : params.error === 'unsupported_file'
-        ? 'Only JSON, YAML and YML suite files are supported.'
-        : params.error === 'not_authorized'
-          ? 'You are not authorized to upload a suite to this project.'
-          : params.error === 'missing_file'
-            ? 'Choose a suite file before uploading.'
-            : params.error === 'upload_failed'
-              ? 'The suite could not be uploaded. Check the API logs for details.'
-              : null
+    : params.error === 'backend_config'
+      ? 'FastAPI is running, but its Supabase configuration is incomplete. Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (or SUPABASE_ANON_KEY) in the FastAPI environment, then restart FastAPI.'
+      : params.error === 'file_too_large'
+        ? 'This suite exceeds the 10 MB upload limit.'
+        : params.error === 'unsupported_file'
+          ? 'Only JSON, YAML and YML suite files are supported.'
+          : params.error === 'not_authorized'
+            ? 'You are not authorized to upload a suite to this project.'
+            : params.error === 'missing_file'
+              ? 'Choose a suite file before uploading.'
+              : params.error === 'upload_failed'
+                ? 'The suite could not be uploaded. Check the FastAPI logs for the exact Supabase response.'
+                : null
 
   return (
     <main className="dashboard-shell">
