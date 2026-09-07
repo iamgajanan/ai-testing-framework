@@ -19,6 +19,7 @@ class AuthenticatedUser:
     id: str
     email: str | None
     claims: dict[str, Any]
+    access_token: str
 
 
 @lru_cache(maxsize=1)
@@ -64,4 +65,5 @@ def get_current_user(
         id=str(claims["sub"]),
         email=claims.get("email"),
         claims=claims,
+        access_token=credentials.credentials,
     )
