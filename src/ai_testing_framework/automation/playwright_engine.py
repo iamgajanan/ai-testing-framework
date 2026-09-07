@@ -72,7 +72,7 @@ class PlaywrightEngine:
         if not us or not ps or not ss:raise ValueError('Login requires username_selector, password_selector and submit_selector')
         self.page.locator(us).fill(str(value.get('username','')));self.page.locator(ps).fill(str(value.get('password','')));self.page.locator(ss).click()
         if value.get('success_url'):self.page.wait_for_url(str(value['success_url']),wait_until=value.get('wait_until','domcontentloaded'),timeout=self.timeout)
-        elif value.get('wait_for_load_state'):self.page.wait_for_load_state(str(value['wait_for_load_state']))
+        elif value.get('wait_for_load_state'):self.page.wait_for_load_state(str(value.get('wait_for_load_state')))
     def _switch_tab(self,value):
         assert self.context is not None;pages=self.context.pages
         if not pages:raise ValueError('No browser pages are open')
@@ -114,15 +114,15 @@ class PlaywrightEngine:
         if action in {'accept_dialog','accept_alert'}:self._dialog_action='accept';return
         if action in {'dismiss_dialog','dismiss_alert'}:self._dialog_action='dismiss';return
         if action in {'open_popup','click_popup'}:
-            locator=self._resolve_locator(selector,description);existing=set(self.context.pages);locator.click(timeout=timeout)
-            deadline=__import__('time').monotonic()+timeout/1000
-            popup=None
-            while __import__('time').monotonic()<deadline:
-                candidates=[p for p in self.context.pages if p not in existing]
-                if candidates:popup=candidates[-1];break
-                self.page.wait_for_timeout(50)
-            if popup is None:raise TimeoutError(f'Timeout {timeout}ms exceeded while waiting for popup page')
-            popup.wait_for_load_state('domcontentloaded',timeout=timeout);self.page=popup;self.page.set_default_timeout(self.timeout);self._attach_listeners();return popup
+            locator=self._resolve_locator(selector,description);attempts=3;attempt_timeout=max(1000,timeout//attempts)
+            for attempt in range(attempts):
+                existing=set(self.context.pages);locator.click(timeout=attempt_timeout);deadline=__import__('time').monotonic()+attempt_timeout/1000
+                while __import__('time').monotonic()<deadline:
+                    candidates=[p for p in self.context.pages if p not in existing]
+                    if candidates:
+                        popup=candidates[-1];popup.wait_for_load_state('domcontentloaded',timeout=timeout);self.page=popup;self.page.set_default_timeout(self.timeout);self._attach_listeners();return popup
+                    self.page.wait_for_timeout(50)
+            raise TimeoutError(f'Timeout {timeout}ms exceeded while waiting for popup page after {attempts} attempts')
         if action in {'switch_tab','switch_page'}:return self._switch_tab(value)
         if action in {'close_tab','close_page'}:
             if len(self.context.pages)<=1:raise ValueError('Cannot close the only browser tab')
