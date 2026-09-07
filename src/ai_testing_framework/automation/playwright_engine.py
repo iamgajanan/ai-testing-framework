@@ -115,7 +115,7 @@ class PlaywrightEngine:
         if action in {'dismiss_dialog','dismiss_alert'}:self._dialog_action='dismiss';return
         if action in {'open_popup','click_popup'}:
             locator=self._resolve_locator(selector,description)
-            with self.page.expect_popup(timeout=timeout) as popup_info:locator.click(timeout=timeout)
+            with self.context.expect_page(timeout=timeout) as popup_info:locator.click(timeout=timeout)
             popup=popup_info.value;popup.wait_for_load_state('domcontentloaded',timeout=timeout);self.page=popup;self.page.set_default_timeout(self.timeout);self._attach_listeners();return popup
         if action in {'switch_tab','switch_page'}:return self._switch_tab(value)
         if action in {'close_tab','close_page'}:
@@ -123,7 +123,6 @@ class PlaywrightEngine:
             self.page.close();return self._switch_tab('last')
         if action in {'press','keyboard'} and not selector and not description:self.page.keyboard.press(value_text);return
         if action in {'scroll','scroll_to'}:
-            # value: "selector" or {"x":0,"y":500} or omitted (scroll page)
             import json as _json
             try:coords=_json.loads(str(value_text)) if value_text else {}
             except ValueError:coords={}
@@ -133,7 +132,6 @@ class PlaywrightEngine:
                 self.page.locator(value_text).scroll_into_view_if_needed(timeout=timeout);return
             self.page.evaluate('window.scrollTo(0,document.body.scrollHeight)');return
         if action in {'drag','drag_and_drop'}:
-            # value: target_selector; selector: source_selector
             if not selector or not value_text:raise ValueError("drag requires both selector (source) and value (target selector)")
             self.page.drag_and_drop(selector,value_text,timeout=timeout);return
         if action in {'focus'}:
@@ -141,12 +139,8 @@ class PlaywrightEngine:
         if action in {'clear','clear_input'}:
             locator=self._resolve_locator(selector,description);locator.clear(timeout=timeout);return
         if action in {'frame','frame_locator','iframe'}:
-            # value: CSS selector for the iframe element; subsequent step actions use the frame
-            # This switches page context into the iframe for the duration of the step.
-            # Use "frame" to evaluate JS or take a screenshot inside a frame.
             if not value_text:raise ValueError("frame action requires value (iframe CSS selector)")
             frame_locator=self.page.frame_locator(value_text)
-            # Store frame locator for chaining — expose it as result for advanced use
             return frame_locator
         if action=='wait_for_load_state':self.page.wait_for_load_state(value_text or 'networkidle',timeout=timeout);return
         if action in {'upload','set_input_files'}:
