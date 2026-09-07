@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -10,7 +11,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import APIKeyHeader
 
 from .auth import AuthenticatedUser
-from .db import SupabaseDataClient, SupabaseDataError, SupabaseServiceClient, get_data_client
+from .db import SupabaseDataClient, SupabaseDataError, SupabaseServiceClient
 
 
 API_KEY_PREFIX = "atk_live_"
@@ -44,7 +45,8 @@ def hash_api_key(raw: str) -> str:
 
 async def authenticate_api_key(raw_key: str) -> APIKeyPrincipal | None:
     digest = hash_api_key(raw_key)
-    rows = await SupabaseServiceClient().select(
+    service = SupabaseServiceClient()
+    rows = await service.select(
         "project_api_keys",
         select="id,organization_id,project_id,created_by,scopes",
         filters={"key_hash": f"eq.{digest}", "revoked_at": "is.null"},
@@ -62,11 +64,14 @@ async def authenticate_api_key(raw_key: str) -> APIKeyPrincipal | None:
         scopes=scopes,
         api_key=raw_key,
     )
-    await SupabaseServiceClient().update(
-        "project_api_keys",
-        {"id": f"eq.{principal.key_id}"},
-        {"last_used_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()},
-    )
+    try:
+        await service.update(
+            "project_api_keys",
+            {"id": f"eq.{principal.key_id}"},
+            {"last_used_at": datetime.now(timezone.utc).isoformat()},
+        )
+    except SupabaseDataError:
+        pass
     return principal
 
 
