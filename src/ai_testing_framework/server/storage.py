@@ -24,15 +24,29 @@ class StoredArtifact:
 
 
 class SupabaseStorageClient:
-    """Server-only Supabase Storage client using the service role key."""
+    """Supabase Storage client.
 
-    def __init__(self) -> None:
+    Worker/server operations use the service-role key. Authenticated dashboard
+    requests can instead pass the user's JWT, so suite uploads/downloads do not
+    require a privileged key in the local dashboard flow.
+    """
+
+    def __init__(self, access_token: str | None = None) -> None:
         url = os.environ.get("SUPABASE_URL", "").rstrip("/")
-        key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
-        if not url or not key:
-            raise SupabaseDataError("Artifact storage is not configured", 503)
+        if not url:
+            raise SupabaseDataError("SUPABASE_URL is not configured", 503)
+
+        if access_token:
+            key = os.environ.get("SUPABASE_PUBLISHABLE_KEY", "")
+            if not key:
+                raise SupabaseDataError("SUPABASE_PUBLISHABLE_KEY is not configured", 503)
+            self._headers = {"apikey": key, "Authorization": f"Bearer {access_token}"}
+        else:
+            key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+            if not key:
+                raise SupabaseDataError("SUPABASE_SERVICE_ROLE_KEY is not configured for worker storage", 503)
+            self._headers = {"apikey": key, "Authorization": f"Bearer {key}"}
         self._url = f"{url}/storage/v1"
-        self._headers = {"apikey": key, "Authorization": f"Bearer {key}"}
 
     async def upload_file(self, local_path: str, storage_path: str, bucket: str = BUCKET) -> StoredArtifact:
         path = Path(local_path)
@@ -55,7 +69,7 @@ class SupabaseStorageClient:
         headers = {
             **self._headers,
             "Content-Type": resolved_content_type,
-            "x-upsert": "true",
+            "x-upsert": "false",
             "Cache-Control": "3600",
         }
         url = f"{self._url}/object/{quote(bucket, safe='')}/{quote(storage_path, safe='/')}"
@@ -64,6 +78,14 @@ class SupabaseStorageClient:
         if not response.is_success:
             raise SupabaseDataError(f"Storage upload failed: {response.text}", response.status_code)
         return StoredArtifact(filename, storage_path, resolved_content_type, len(data))
+
+    async def download_bytes(self, storage_path: str, *, bucket: str = "test-suites") -> bytes:
+        url = f"{self._url}/object/{quote(bucket, safe='')}/{quote(storage_path, safe='/')}"
+        async with httpx.AsyncClient(timeout=120) as client:
+            response = await client.get(url, headers=self._headers)
+        if not response.is_success:
+            raise SupabaseDataError(f"Storage download failed: {response.text}", response.status_code)
+        return response.content
 
     async def create_signed_url(self, storage_path: str, expires_in: int = 3600, bucket: str = BUCKET) -> str:
         url = f"{self._url}/object/sign/{quote(bucket, safe='')}/{quote(storage_path, safe='/')}"
