@@ -19,7 +19,7 @@ class ExecutionPrincipal:
 
     @property
     def organization_id(self) -> str | None:
-        return self.user.id if self.api_key is None and self.user else self.api_key.organization_id if self.api_key else None
+        return self.api_key.organization_id if self.api_key else None
 
     @property
     def project_id(self) -> str | None:
