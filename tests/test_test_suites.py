@@ -56,16 +56,17 @@ def _install_overrides(fake: FakeDB):
     app.dependency_overrides[get_current_user] = lambda: user
 
 
-def test_test_suite_upload_endpoint():
+def test_test_suite_upload_endpoint(monkeypatch):
     fake = FakeDB()
     _install_overrides(fake)
+    monkeypatch.setattr("ai_testing_framework.server.test_suites.SupabaseStorageClient", FakeStorage)
     try:
         client = TestClient(app)
         response = client.post(
             f"/v1/projects/{fake.project_id}/test-suites",
             files={"file": ("suite.json", b'{"tests": []}', "application/json")},
         )
-        assert response.status_code == 201
+        assert response.status_code == 201, response.text
         body = response.json()
         assert body["version"] == 1
         assert body["filename"] == "suite.json"
