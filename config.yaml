@@ -23,3 +23,7 @@ screenshots:
 
 parallel:
   workers: 1
+
+artifacts:
+  trace_on_failure: false   # set true to record Playwright trace zip on FAIL
+  video_on_failure: false   # set true to record video webm on FAIL (slow; off by default)

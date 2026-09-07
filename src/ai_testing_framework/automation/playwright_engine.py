@@ -8,7 +8,7 @@ from .self_healing import SelfHealing
 
 class PlaywrightEngine:
     """Thin synchronous Playwright adapter with Phase C agentic artifacts and route mocks."""
-    def __init__(self,browser_name="chromium",headless=True,timeout=30000,ai_provider="none",ai_model="gpt-4o-mini",self_healing=True,healing_confidence=0.70,artifact_dir="reports",record_trace=True,record_video=True):
+    def __init__(self,browser_name="chromium",headless=True,timeout=30000,ai_provider="none",ai_model="gpt-4o-mini",self_healing=True,healing_confidence=0.70,artifact_dir="reports",record_trace=False,record_video=False):
         self.browser_name=browser_name;self.headless=headless;self.timeout=timeout;self.artifact_dir=Path(artifact_dir);self.ai_locator=AIElementLocator(ai_provider,ai_model);self.self_healing=SelfHealing(ai_provider,ai_model,healing_confidence) if self_healing else None;self.record_trace=record_trace;self.record_video=record_video;self.playwright=None;self.browser=None;self.context=None;self.page=None;self.console_errors=[];self.api_errors=[];self.downloads=[];self.uploads=[];self.healed_selectors=[];self.dialogs=[];self.trace_path=None;self.video_path=None;self._trace_started=False
     def start(self):
         self.playwright=sync_playwright().start();self.browser=getattr(self.playwright,self.browser_name).launch(headless=self.headless);video_dir=self.artifact_dir/'videos';video_dir.mkdir(parents=True,exist_ok=True) if self.record_video else None;self.context=self.browser.new_context(accept_downloads=True,record_video_dir=str(video_dir) if self.record_video else None);self.page=self.context.new_page();self.page.set_default_timeout(self.timeout)
