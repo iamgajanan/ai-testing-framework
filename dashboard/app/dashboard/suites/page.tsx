@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { uploadSuite } from './actions'
+import { UploadSubmit } from './upload-submit'
+import styles from './suites.module.css'
 
 export default async function SuitesPage({ searchParams }: { searchParams: Promise<{ project?: string; error?: string; uploaded?: string }> }) {
   const params = await searchParams
@@ -71,7 +73,10 @@ export default async function SuitesPage({ searchParams }: { searchParams: Promi
                     <h3>{s.name}</h3><p>{v?.filename ?? 'No file uploaded'}</p>
                     <div className="suite-meta"><span>{versions.length} version{versions.length === 1 ? '' : 's'}</span><span>{v ? `${Math.max(1, Math.ceil(v.size_bytes / 1024))} KB` : '—'}</span></div>
                     {v && <code className="hash">sha256 {v.sha256.slice(0, 16)}…</code>}
-                    <div className="suite-card-actions"><Link className="suite-action" href={`/dashboard/suites/${s.id}?project=${project.id}`}>Versions <span>→</span></Link><Link className="suite-action primary-link" href={`/dashboard/executions?project=${project.id}&suite=${s.id}`}>Run <span>↗</span></Link></div>
+                    <div className={styles.actions}>
+                      <Link className={`${styles.action}`} href={`/dashboard/suites/${s.id}?project=${project.id}`}>Versions <span>→</span></Link>
+                      <Link className={`${styles.action} ${styles.primary}`} href={`/dashboard/executions?project=${project.id}&suite=${s.id}`}>Run <span>↗</span></Link>
+                    </div>
                   </article>
                 })}
                 {!suites?.length && <div className="mini-empty card"><div>◇</div><strong>Your suite library is empty</strong><span>Upload a JSON or YAML definition to create version 1.</span></div>}
@@ -83,8 +88,8 @@ export default async function SuitesPage({ searchParams }: { searchParams: Promi
               <form action={uploadSuite} className="upload-form">
                 <input type="hidden" name="project_id" value={project.id} />
                 <div className="field"><label htmlFor="suite-name">Suite name <span>optional</span></label><input id="suite-name" name="name" placeholder="Checkout regression" maxLength={120} /></div>
-                <label className="file-drop" htmlFor="suite-file"><div className="upload-glyph">↑</div><strong>Choose suite file</strong><span>JSON, YAML or YML · up to 10 MB</span><input id="suite-file" required type="file" name="file" accept=".json,.yaml,.yml,application/json,text/yaml" /></label>
-                <button className="btn btn-primary upload-submit" type="submit">Upload & version <span>→</span></button>
+                <label className={`file-drop ${styles.drop}`} htmlFor="suite-file"><div className="upload-glyph">↑</div><strong>Choose suite file</strong><span>JSON, YAML or YML · up to 10 MB</span><input id="suite-file" required type="file" name="file" accept=".json,.yaml,.yml,application/json,text/yaml" /></label>
+                <UploadSubmit />
               </form>
             </div>
           </div>
