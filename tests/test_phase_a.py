@@ -129,3 +129,104 @@ def test_html_report_contains_step_trace_and_flaky_section(tmp_path):
 
     history = json.loads((tmp_path / "history.json").read_text(encoding="utf-8"))
     assert len(history) == 3
+
+
+# ---------------------------------------------------------------------------
+# New actions: scroll, drag, focus, clear, iframe
+# ---------------------------------------------------------------------------
+
+class FakePageActions:
+    """Minimal mock for scroll/drag/focus/clear/frame actions."""
+    def __init__(self):
+        self.evaluated = []
+        self.dragged = []
+        self.frame_sel = None
+        self.url = "http://example.com/"
+        self.default_timeout = 30000
+
+    def set_default_timeout(self, t): self.default_timeout = t
+    def evaluate(self, script, *args): self.evaluated.append(script); return None
+    def drag_and_drop(self, src, tgt, timeout=30000): self.dragged.append((src, tgt))
+    def frame_locator(self, sel): self.frame_sel = sel; return f"frame:{sel}"
+
+    def locator(self, sel):
+        class L:
+            def __init__(self):
+                self.focused = False; self.cleared = False
+                self.count = lambda: 1
+            @property
+            def first(self): return self
+            def scroll_into_view_if_needed(self, timeout=30000): pass
+            def focus(self, timeout=30000): self.focused = True
+            def clear(self, timeout=30000): self.cleared = True
+            def is_visible(self): return True
+            def is_enabled(self): return True
+            def is_checked(self): return False
+            def is_editable(self): return True
+        return L()
+
+
+def _engine_with(page):
+    engine = PlaywrightEngine(self_healing=False)
+    engine.page = page
+    return engine
+
+
+def test_scroll_page_to_bottom():
+    page = FakePageActions()
+    engine = _engine_with(page)
+    engine.run_step(Step(action="scroll"))
+    assert any("scrollTo" in e for e in page.evaluated)
+
+
+def test_scroll_to_xy_coordinates():
+    page = FakePageActions()
+    engine = _engine_with(page)
+    import json
+    engine.run_step(Step(action="scroll", value=json.dumps({"x": 0, "y": 500})))
+    assert any("scrollTo(0,500)" in e for e in page.evaluated)
+
+
+def test_drag_and_drop():
+    page = FakePageActions()
+    engine = _engine_with(page)
+    engine.run_step(Step(action="drag", selector="#source", value="#target"))
+    assert ("#source", "#target") in page.dragged
+
+
+def test_drag_requires_selector_and_value():
+    import pytest
+    page = FakePageActions()
+    engine = _engine_with(page)
+    with pytest.raises(ValueError, match="drag requires"):
+        engine.run_step(Step(action="drag", selector="#source"))
+
+
+def test_focus_action():
+    page = FakePageActions()
+    engine = _engine_with(page)
+    engine.run_step(Step(action="focus", selector="#input"))
+    # no exception = success (mock locator.focus() is a no-op)
+
+
+def test_clear_action():
+    page = FakePageActions()
+    engine = _engine_with(page)
+    engine.run_step(Step(action="clear", selector="#input"))
+    # no exception = success
+
+
+def test_iframe_action_returns_frame_locator():
+    page = FakePageActions()
+    engine = _engine_with(page)
+    result = engine.run_step(Step(action="frame", value="iframe#payment"))
+    assert result == "frame:iframe#payment"
+    assert page.frame_sel == "iframe#payment"
+
+
+def test_iframe_requires_value():
+    import pytest
+    page = FakePageActions()
+    engine = _engine_with(page)
+    with pytest.raises(ValueError, match="frame action requires"):
+        engine.run_step(Step(action="frame"))
