@@ -24,16 +24,9 @@ class SupabaseDataClient:
         self._url = f"{url}/rest/v1"
         self._headers = {
             "apikey": key,
-            "Authorization": f"Bearer {self._token_from_user(user)}",
+            "Authorization": f"Bearer {user.access_token}",
             "Content-Type": "application/json",
         }
-
-    @staticmethod
-    def _token_from_user(user: AuthenticatedUser) -> str:
-        token = user.claims.get("_access_token")
-        if not isinstance(token, str):
-            raise SupabaseDataError("Authenticated access token is unavailable", 500)
-        return token
 
     async def select(
         self,
