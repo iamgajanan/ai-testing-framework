@@ -6,10 +6,6 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import SignOutButton from '../sign-out-button'
 
-function slugify(value: string) {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || 'project'
-}
-
 export async function createProject(formData: FormData) {
   const supabase = await createClient()
   const { data: claimsData } = await supabase.auth.getClaims()
@@ -17,29 +13,20 @@ export async function createProject(formData: FormData) {
   if (!userId) redirect('/login')
 
   const name = String(formData.get('name') || '').trim()
+  const workspace = String(formData.get('workspace') || 'My Workspace').trim() || 'My Workspace'
   if (name.length < 2 || name.length > 120) redirect('/dashboard/projects?error=project_name')
+  if (workspace.length < 2 || workspace.length > 120) redirect('/dashboard/projects?error=workspace_name')
 
-  let { data: organizations } = await supabase.from('organizations').select('id').order('created_at', { ascending: true }).limit(1)
-  let organizationId = organizations?.[0]?.id
+  const { error } = await supabase.rpc('create_workspace_project', {
+    workspace_name: workspace,
+    project_name: name,
+  })
 
-  if (!organizationId) {
-    const workspaceName = String(formData.get('workspace') || 'My Workspace').trim().slice(0, 120) || 'My Workspace'
-    const workspaceSlug = slugify(workspaceName)
-    const created = await supabase.from('organizations').insert({ name: workspaceName, slug: workspaceSlug, created_by: userId }).select('id').single()
-    if (created.error) redirect('/dashboard/projects?error=workspace')
-    organizationId = created.data.id
+  if (error) {
+    console.error('Project creation failed:', error)
+    redirect('/dashboard/projects?error=project_create')
   }
 
-  let slug = slugify(name)
-  const { data: existing } = await supabase.from('projects').select('slug').eq('organization_id', organizationId).like('slug', `${slug}%`)
-  if (existing?.some((item) => item.slug === slug)) {
-    let index = 2
-    while (existing.some((item) => item.slug === `${slug}-${index}`)) index += 1
-    slug = `${slug}-${index}`
-  }
-
-  const { error } = await supabase.from('projects').insert({ organization_id: organizationId, name, slug, created_by: userId })
-  if (error) redirect('/dashboard/projects?error=project_create')
   revalidatePath('/dashboard')
   revalidatePath('/dashboard/projects')
   redirect('/dashboard/projects?created=1')
@@ -95,7 +82,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         ) : (
           <section className="empty-state" id="new-project">
             <div className="empty-orb"><span>✦</span></div><span className="eyebrow">FIRST PROJECT</span><h2>Bring your application into the workspace.</h2><p>Create a project to organize test suites, executions, reports and artifacts in one place.</p>
-            <form action={createProject} className="project-form"><div className="field"><label htmlFor="name">Project name</label><input id="name" name="name" placeholder="e.g. Customer Portal" required minLength={2} maxLength={120} /></div><div className="field"><label htmlFor="workspace">Workspace name <span>(only needed for your first project)</span></label><input id="workspace" name="workspace" placeholder="My Workspace" maxLength={120} /></div><button className="btn btn-primary" type="submit">Create project <span>→</span></button></form>
+            <form action={createProject} className="project-form"><div className="field"><label htmlFor="name">Project name</label><input id="name" name="name" placeholder="e.g. Customer Portal" required minLength={2} maxLength={120} /></div><div className="field"><label htmlFor="workspace">Workspace name <span>(only needed for your first project)</span></label><input id="workspace" name="workspace" placeholder="My Workspace" minLength={2} maxLength={120} /></div><button className="btn btn-primary" type="submit">Create project <span>→</span></button></form>
           </section>
         )}
 
