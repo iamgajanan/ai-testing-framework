@@ -4,9 +4,16 @@ import time
 from typing import Any, Tuple
 
 
-def validate_element_present(page, selector: str) -> Tuple[bool, str]:
-    count = page.locator(selector).count()
-    return count > 0, f"Element count: {count}"
+def validate_element_present(page, selector: str, timeout: int = 5000, poll_interval: int = 100) -> Tuple[bool, str]:
+    """Validate that an element exists, allowing navigation/UI updates to settle."""
+    deadline = time.monotonic() + max(0, timeout) / 1000
+    while True:
+        count = page.locator(selector).count()
+        if count > 0:
+            return True, f"Element count: {count}"
+        if time.monotonic() >= deadline:
+            return False, f"Element count: {count}"
+        page.wait_for_timeout(min(poll_interval, max(1, int((deadline - time.monotonic()) * 1000))))
 
 
 def validate_text_contains(page, selector: str, expected: str, timeout: int = 5000, poll_interval: int = 100) -> Tuple[bool, str]:
@@ -38,7 +45,6 @@ def validate_element_attribute(page, selector: str, attribute: str, expected: An
     if locator is None:
         return False, f"Element not found: {selector}"
     actual = locator.get_attribute(attribute)
-    # Boolean HTML attributes are represented as present/absent attributes.
     if isinstance(expected, bool):
         actual_value = actual is not None
         return actual_value == expected, f"Expected attribute {attribute!r}={expected!r}; actual={actual_value!r}"
