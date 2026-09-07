@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -52,30 +53,62 @@ def test_runner_rejects_non_positive_timeout() -> None:
 def test_runner_parses_child_result(monkeypatch: pytest.MonkeyPatch) -> None:
     expected = {"status": ExecutionStatus.PASSED.value, "total": 1, "passed": 1, "failed": 0}
 
-    def fake_run(command, **kwargs):
+    class FakeProcess:
+        pid = 123
+        returncode = 0
+
+        def communicate(self, payload=None, timeout=None):
+            assert payload
+            assert timeout == 10
+            json.loads(payload)
+            return json.dumps(expected), ""
+
+        def poll(self):
+            return self.returncode
+
+    def fake_popen(command, **kwargs):
         assert command[-2:] == ["-m", "ai_testing_framework.cloud.execution_process"]
         assert kwargs["text"] is True
-        assert kwargs["capture_output"] is True
-        json.loads(kwargs["input"])
-        return SimpleNamespace(returncode=0, stdout=json.dumps(expected), stderr="")
+        return FakeProcess()
 
-    monkeypatch.setattr("ai_testing_framework.cloud.runner.subprocess.run", fake_run)
+    monkeypatch.setattr("ai_testing_framework.cloud.runner.subprocess.Popen", fake_popen)
     assert IsolatedExecutionRunner(10).execute(make_request()) == expected
 
 
 def test_runner_surfaces_child_process_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run(command, **kwargs):
-        return SimpleNamespace(returncode=7, stdout="", stderr="boom")
+    class FakeProcess:
+        returncode = 7
 
-    monkeypatch.setattr("ai_testing_framework.cloud.runner.subprocess.run", fake_run)
+        def communicate(self, payload=None, timeout=None):
+            return "", "boom"
+
+        def poll(self):
+            return self.returncode
+
+    monkeypatch.setattr("ai_testing_framework.cloud.runner.subprocess.Popen", lambda *a, **k: FakeProcess())
     with pytest.raises(ExecutionRunnerError, match="boom"):
         IsolatedExecutionRunner(10).execute(make_request())
 
 
-def test_runner_surfaces_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run(command, **kwargs):
-        raise __import__("subprocess").TimeoutExpired(command, 10)
+def test_runner_surfaces_timeout_and_terminates_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeProcess:
+        pid = 123
+        returncode = None
 
-    monkeypatch.setattr("ai_testing_framework.cloud.runner.subprocess.run", fake_run)
+        def communicate(self, payload=None, timeout=None):
+            if payload is not None:
+                raise subprocess.TimeoutExpired(["worker"], timeout)
+            return "", ""
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):
+            self.returncode = -15
+            return self.returncode
+
+    process = FakeProcess()
+    monkeypatch.setattr("ai_testing_framework.cloud.runner.subprocess.Popen", lambda *a, **k: process)
+    monkeypatch.setattr("ai_testing_framework.cloud.runner.os.killpg", lambda *a: None)
     with pytest.raises(ExecutionRunnerError, match="timed out"):
         IsolatedExecutionRunner(10).execute(make_request())
