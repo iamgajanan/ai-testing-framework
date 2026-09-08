@@ -6,4 +6,6 @@ reports/*.html
 reports/*.json
 reports/screenshots/
 .env
+.env.local
+*.local
 .DS_Store

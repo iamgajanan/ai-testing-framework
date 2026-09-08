@@ -1,0 +1,13 @@
+.actions { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid rgba(148,163,184,.12); margin-top: 18px; }
+.action { padding: 12px 10px 2px 0; color: #9ca9bc; font-size: 11px; font-weight: 750; }
+.action + .action { padding-left: 10px; border-left: 1px solid rgba(148,163,184,.12); }
+.primary { color: #aab6ff; }
+
+.drop { transition: .2s ease; cursor: pointer; }
+.drop:hover { border-color: #5367a2 !important; background: rgba(109,124,255,.06); transform: translateY(-1px); }
+.drop input { cursor: pointer; }
+
+@media (max-width: 900px) {
+  .actions { grid-template-columns: 1fr; }
+  .action + .action { border-left: 0; padding-left: 0; padding-top: 8px; }
+}

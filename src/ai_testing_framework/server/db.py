@@ -15,12 +15,35 @@ class SupabaseDataError(RuntimeError):
         self.status_code = status_code
 
 
+def _client_key() -> str:
+    """Return the non-privileged Supabase client key.
+
+    Supabase projects can expose the newer publishable key or the legacy anon
+    key. SUPABASE_KEY is also accepted for older local deployments. The key is
+    always combined with the caller's JWT so RLS remains the authorization
+    boundary.
+    """
+    return (
+        os.environ.get("SUPABASE_PUBLISHABLE_KEY", "")
+        or os.environ.get("SUPABASE_ANON_KEY", "")
+        or os.environ.get("SUPABASE_KEY", "")
+    )
+
+
+def _service_key() -> str:
+    return os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "") or os.environ.get("SUPABASE_SECRET_KEY", "")
+
+
 class SupabaseDataClient:
     def __init__(self, user: AuthenticatedUser) -> None:
         url = os.environ.get("SUPABASE_URL", "").rstrip("/")
-        key = os.environ.get("SUPABASE_PUBLISHABLE_KEY", "")
+        key = _client_key()
         if not url or not key:
-            raise SupabaseDataError("Database integration is not configured", 503)
+            raise SupabaseDataError(
+                "Database integration is not configured. Set SUPABASE_URL and "
+                "SUPABASE_PUBLISHABLE_KEY (or SUPABASE_ANON_KEY) in the FastAPI environment.",
+                503,
+            )
         self._url = f"{url}/rest/v1"
         self._rpc_url = f"{url}/rest/v1/rpc"
         self._headers = {
@@ -83,7 +106,7 @@ class SupabaseServiceClient:
 
     def __init__(self) -> None:
         url = os.environ.get("SUPABASE_URL", "").rstrip("/")
-        key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+        key = _service_key()
         if not url or not key:
             raise SupabaseDataError("Server database integration is not configured", 503)
         self._url = f"{url}/rest/v1"
@@ -120,7 +143,7 @@ class SupabaseWorkerClient:
 
     def __init__(self) -> None:
         url = os.environ.get("SUPABASE_URL", "").rstrip("/")
-        key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+        key = _service_key()
         if not url or not key:
             raise SupabaseDataError("Worker database integration is not configured", 503)
         self._rpc_url = f"{url}/rest/v1/rpc"

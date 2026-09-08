@@ -4,8 +4,17 @@ import argparse
 import asyncio
 import logging
 import os
+import shutil
+import tempfile
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
+
+from dotenv import load_dotenv
+
+# Load repository .env for local worker execution. Existing process environment
+# variables keep precedence, so CI and production injected configuration wins.
+load_dotenv(override=False)
 
 from ..cloud.contracts import ExecutionRequest, ExecutionStatus
 from ..cloud.runner import ExecutionRunnerError, IsolatedExecutionRunner
@@ -26,19 +35,34 @@ class ExecutionWorker:
 
     async def run_once(self) -> bool:
         rows = await self.db.claim_next_execution()
-        if not rows or not rows[0]:
+        if not rows:
             return False
-        record = ExecutionRecord.from_row(rows[0])
-        request = ExecutionRequest(
-            organization_id=str(record.organization_id),
-            project_id=str(record.project_id),
-            requested_by=str(record.requested_by),
-            spec=record.spec,
-            metadata=record.metadata,
-        )
+
+        # Older composite-returning RPCs could wrap the result as
+        # {"claim_next_execution": {...}}. Keep this defensive unwrapping while
+        # the current set-returning RPC returns execution rows directly.
+        claimed = rows[0]
+        if isinstance(claimed, dict) and "claim_next_execution" in claimed:
+            claimed = claimed["claim_next_execution"]
+        if not claimed or not isinstance(claimed, dict):
+            return False
+
+        record = ExecutionRecord.from_row(claimed)
+        workspace = Path(tempfile.mkdtemp(prefix=f"ai-test-{record.id}-", dir=os.environ.get("WORKER_TMP_DIR")))
         try:
+            suite_path = workspace / Path(record.spec.suite_path).name
+            suite_data = await self.storage.download_bytes(record.spec.suite_path, bucket="test-suites")
+            suite_path.write_bytes(suite_data)
+            output_dir = workspace / "reports"
+            request = ExecutionRequest(
+                organization_id=str(record.organization_id),
+                project_id=str(record.project_id),
+                requested_by=str(record.requested_by),
+                spec=replace(record.spec, suite_path=str(suite_path), output_dir=str(output_dir)),
+                metadata=record.metadata,
+            )
             result = await asyncio.to_thread(self.engine.execute, request)
-            artifacts = await self._persist_artifacts(record)
+            artifacts = await self._persist_artifacts(record, output_dir)
             result["artifacts"] = artifacts
             terminal = result.get("status", ExecutionStatus.FAILED)
             if isinstance(terminal, ExecutionStatus):
@@ -60,9 +84,10 @@ class ExecutionWorker:
             logger.exception("Unexpected execution %s failure", record.id)
             await self.db.complete_execution(str(record.id), ExecutionStatus.FAILED.value, None, str(exc))
             return True
+        finally:
+            shutil.rmtree(workspace, ignore_errors=True)
 
-    async def _persist_artifacts(self, record: ExecutionRecord) -> list[dict[str, Any]]:
-        output_root = Path(record.spec.output_dir).resolve()
+    async def _persist_artifacts(self, record: ExecutionRecord, output_root: Path) -> list[dict[str, Any]]:
         if not output_root.exists() or not output_root.is_dir():
             return []
         artifacts: list[dict[str, Any]] = []
@@ -102,6 +127,12 @@ class ExecutionWorker:
                 claimed = await self.run_once()
             except SupabaseDataError:
                 logger.exception("Queue database operation failed")
+                claimed = False
+            except Exception:
+                # A malformed queue row or unexpected worker-level failure must
+                # never terminate the long-running worker. Log it and continue
+                # polling so later executions can still be processed.
+                logger.exception("Unexpected worker loop failure")
                 claimed = False
             if not claimed:
                 await asyncio.sleep(self.poll_seconds)
