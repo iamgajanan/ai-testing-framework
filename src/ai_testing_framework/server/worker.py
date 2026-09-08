@@ -38,10 +38,9 @@ class ExecutionWorker:
         if not rows:
             return False
 
-        # PostgREST returns a single object for a composite-returning RPC. When
-        # the function returns NULL, that object is represented as
-        # {"claim_next_execution": null}. Treat that as an empty queue instead
-        # of attempting to deserialize NULL as an execution UUID.
+        # Older composite-returning RPCs could wrap the result as
+        # {"claim_next_execution": {...}}. Keep this defensive unwrapping while
+        # the current set-returning RPC returns execution rows directly.
         claimed = rows[0]
         if isinstance(claimed, dict) and "claim_next_execution" in claimed:
             claimed = claimed["claim_next_execution"]
@@ -128,6 +127,12 @@ class ExecutionWorker:
                 claimed = await self.run_once()
             except SupabaseDataError:
                 logger.exception("Queue database operation failed")
+                claimed = False
+            except Exception:
+                # A malformed queue row or unexpected worker-level failure must
+                # never terminate the long-running worker. Log it and continue
+                # polling so later executions can still be processed.
+                logger.exception("Unexpected worker loop failure")
                 claimed = False
             if not claimed:
                 await asyncio.sleep(self.poll_seconds)
