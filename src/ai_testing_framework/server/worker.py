@@ -35,9 +35,20 @@ class ExecutionWorker:
 
     async def run_once(self) -> bool:
         rows = await self.db.claim_next_execution()
-        if not rows or not rows[0]:
+        if not rows:
             return False
-        record = ExecutionRecord.from_row(rows[0])
+
+        # PostgREST returns a single object for a composite-returning RPC. When
+        # the function returns NULL, that object is represented as
+        # {"claim_next_execution": null}. Treat that as an empty queue instead
+        # of attempting to deserialize NULL as an execution UUID.
+        claimed = rows[0]
+        if isinstance(claimed, dict) and "claim_next_execution" in claimed:
+            claimed = claimed["claim_next_execution"]
+        if not claimed or not isinstance(claimed, dict):
+            return False
+
+        record = ExecutionRecord.from_row(claimed)
         workspace = Path(tempfile.mkdtemp(prefix=f"ai-test-{record.id}-", dir=os.environ.get("WORKER_TMP_DIR")))
         try:
             suite_path = workspace / Path(record.spec.suite_path).name
