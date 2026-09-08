@@ -1,0 +1,10 @@
+{
+  "test_suite": "DemoQA Forms and Widgets Regression",
+  "tests": [
+    {"id":"dq-textbox","name":"Text box form can be submitted","url":"/text-box","steps":[{"action":"fill","selector":"#userName","value":"Test User"},{"action":"fill","selector":"#userEmail","value":"test@example.com"},{"action":"fill","selector":"#currentAddress","value":"Pune"},{"action":"click","selector":"#submit"}],"validations":[{"type":"text_contains","selector":"#output","expected":"Test User"},{"type":"text_contains","selector":"#output","expected":"test@example.com"}]},
+    {"id":"dq-checkbox","name":"Checkbox can be selected","url":"/checkbox","steps":[{"action":"click","selector":"label[for='tree-node-home']"}],"validations":[{"type":"element_present","selector":"#result"},{"type":"text_contains","selector":"#result","expected":"home"}]},
+    {"id":"dq-radio","name":"Radio button can be selected","url":"/radio-button","steps":[{"action":"click","selector":"label[for='yesRadio']"}],"validations":[{"type":"text_contains","selector":"#app","expected":"Yes"}]},
+    {"id":"dq-buttons","name":"Double click produces confirmation","url":"/buttons","steps":[{"action":"click","selector":"#doubleClickBtn"}],"validations":[{"type":"text_contains","selector":"#doubleClickMessage","expected":"You have done a double click"}]},
+    {"id":"dq-upload","name":"Upload control is present","url":"/upload-download","steps":[],"validations":[{"type":"element_present","selector":"#uploadFile"}]}
+  ]
+}
