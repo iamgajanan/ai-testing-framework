@@ -1,0 +1,10 @@
+{
+  "test_suite": "Automation Exercise E-commerce Regression",
+  "tests": [
+    {"id":"ae-home","name":"Home page loads","url":"/","steps":[],"validations":[{"type":"element_present","selector":"body"},{"type":"text_contains","selector":"body","expected":"Automation Exercise"}]},
+    {"id":"ae-login-page","name":"Login page is reachable","url":"/","steps":[{"action":"click","selector":"a[href='/login']"}],"validations":[{"type":"text_contains","selector":"body","expected":"Login to your account"},{"type":"element_present","selector":"input[data-qa='login-email']"}]},
+    {"id":"ae-invalid-login","name":"Invalid login is rejected","url":"/login","steps":[{"action":"fill","selector":"input[data-qa='login-email']","value":"invalid@example.invalid"},{"action":"fill","selector":"input[data-qa='login-password']","value":"invalid-password"},{"action":"click","selector":"button[data-qa='login-button']"}],"validations":[{"type":"text_contains","selector":"body","expected":"Your email or password is incorrect!"}]},
+    {"id":"ae-products","name":"Products page lists products","url":"/products","steps":[],"validations":[{"type":"element_present","selector":".features_items"},{"type":"element_present","selector":".product-image-wrapper"}]},
+    {"id":"ae-search","name":"Product search returns results","url":"/products","steps":[{"action":"fill","selector":"#search_product","value":"dress"},{"action":"click","selector":"#submit_search"}],"validations":[{"type":"text_contains","selector":"body","expected":"SEARCHED PRODUCTS"},{"type":"element_present","selector":".product-image-wrapper"}]}
+  ]
+}
