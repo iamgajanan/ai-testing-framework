@@ -1,0 +1,10 @@
+{
+  "test_suite": "WebDriver University Interaction Regression",
+  "tests": [
+    {"id":"wdu-contact","name":"Contact form is available","url":"/Contact-Us/contactus.html","steps":[],"validations":[{"type":"element_present","selector":"input[name='first_name']"},{"type":"element_present","selector":"input[name='last_name']"}]},
+    {"id":"wdu-contact-submit","name":"Contact form accepts valid data","url":"/Contact-Us/contactus.html","steps":[{"action":"fill","selector":"input[name='first_name']","value":"Test"},{"action":"fill","selector":"input[name='last_name']","value":"User"},{"action":"fill","selector":"input[name='email']","value":"test@example.com"},{"action":"fill","selector":"textarea[name='message']","value":"Automation test message"},{"action":"click","selector":"input[type='submit']"}],"validations":[{"type":"text_contains","selector":"body","expected":"Thank You for your Message!"}]},
+    {"id":"wdu-login","name":"Login portal is available","url":"/Login-Portal/index.html","steps":[],"validations":[{"type":"element_present","selector":"#text"},{"type":"element_present","selector":"#password"}]},
+    {"id":"wdu-todo","name":"Todo list accepts an item","url":"/To-Do-List/index.html","steps":[{"action":"fill","selector":"input[placeholder='Add new todo']","value":"SaaS acceptance test"},{"action":"click","selector":"input[type='submit']"}],"validations":[{"type":"text_contains","selector":"body","expected":"SaaS acceptance test"}]},
+    {"id":"wdu-accordion","name":"Accordion page is available","url":"/Accordion/index.html","steps":[],"validations":[{"type":"element_present","selector":"body"}]}
+  ]
+}
