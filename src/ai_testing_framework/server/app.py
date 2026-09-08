@@ -4,8 +4,14 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
+
+# Load local development configuration from the repository .env file.
+# Existing process environment variables keep precedence, so CI and production
+# continue to use their injected configuration.
+load_dotenv(override=False)
 
 from ..cloud.contracts import ExecutionSpec
 from .api_keys import create_project_api_key
