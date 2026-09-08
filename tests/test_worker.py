@@ -76,9 +76,9 @@ class FakeEngine:
         }
 
 
-def execution_row():
+def execution_row(execution_id=EXECUTION_ID):
     return {
-        "id": str(EXECUTION_ID),
+        "id": str(execution_id),
         "organization_id": str(ORG_ID),
         "project_id": str(PROJECT_ID),
         "requested_by": str(USER_ID),
@@ -123,7 +123,7 @@ def test_run_once_success_persists_result_and_artifacts(tmp_path, monkeypatch):
 def test_failed_execution_does_not_stop_worker_and_next_job_can_run(tmp_path, monkeypatch):
     monkeypatch.setenv("WORKER_TMP_DIR", str(tmp_path))
     first = execution_row()
-    second = {**execution_row(), "id": "55555555-5555-5555-5555-555555555555"}
+    second = execution_row(UUID("55555555-5555-5555-5555-555555555555"))
     db = FakeDB([first, second])
     storage = FakeStorage()
 
@@ -143,33 +143,30 @@ def test_run_once_returns_false_when_queue_is_empty():
     assert asyncio.run(worker.run_once()) is False
 
 
-def test_run_forever_survives_queue_error_and_keeps_polling():
-    class QueueThenStop:
-        def __init__(self):
-            self.calls = 0
+def test_run_forever_survives_queue_error_and_keeps_polling(monkeypatch):
+    worker = make_worker(FakeDB([]), FakeStorage(), FakeEngine())
+    calls = 0
 
-        async def __call__(self):
-            self.calls += 1
-            if self.calls == 1:
-                raise SupabaseDataError("temporary queue failure")
+    async def run_once():
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise SupabaseDataError("temporary queue failure")
+        return False
+
+    sleeps = 0
+
+    async def fake_sleep(_seconds):
+        nonlocal sleeps
+        sleeps += 1
+        if sleeps == 2:
             raise StopAsyncIteration
 
-    worker = make_worker(FakeDB([]), FakeStorage(), FakeEngine())
-    poll = QueueThenStop()
-    worker.run_once = poll
+    worker.run_once = run_once
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
-    async def stop_after_retry(_seconds):
-        return None
+    with pytest.raises(StopAsyncIteration):
+        asyncio.run(worker.run_forever())
 
-    async def run():
-        with pytest.raises(StopAsyncIteration):
-            await worker.run_forever()
-
-    original_sleep = asyncio.sleep
-    try:
-        asyncio.sleep = stop_after_retry
-        asyncio.run(run())
-    finally:
-        asyncio.sleep = original_sleep
-
-    assert poll.calls == 2
+    assert calls == 2
+    assert sleeps == 2
