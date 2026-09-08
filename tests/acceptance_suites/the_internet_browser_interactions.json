@@ -1,0 +1,11 @@
+{
+  "test_suite": "The Internet Browser Interaction Regression",
+  "tests": [
+    {"id":"ti-login","name":"Valid form authentication","url":"/login","steps":[{"action":"fill","selector":"#username","value":"tomsmith"},{"action":"fill","selector":"#password","value":"SuperSecretPassword!"},{"action":"click","selector":"button[type='submit']"}],"validations":[{"type":"text_contains","selector":"#flash","expected":"You logged into a secure area!"},{"type":"url_contains","expected":"/secure"}]},
+    {"id":"ti-invalid-login","name":"Invalid login shows error","url":"/login","steps":[{"action":"fill","selector":"#username","value":"invalid"},{"action":"fill","selector":"#password","value":"invalid"},{"action":"click","selector":"button[type='submit']"}],"validations":[{"type":"element_present","selector":"#flash"},{"type":"text_contains","selector":"#flash","expected":"Your username is invalid!"}]},
+    {"id":"ti-checkboxes","name":"Checkboxes page has two checkboxes","url":"/checkboxes","steps":[],"validations":[{"type":"element_count","selector":"#checkboxes input","expected":2}]},
+    {"id":"ti-dropdown","name":"Dropdown has expected options","url":"/dropdown","steps":[],"validations":[{"type":"element_present","selector":"#dropdown"},{"type":"element_count","selector":"#dropdown option","expected":3}]},
+    {"id":"ti-dynamic-loading","name":"Dynamic loading completes","url":"/dynamic_loading/2","steps":[{"action":"click","selector":"#start"}],"validations":[{"type":"text_contains","selector":"#finish","expected":"Hello World!"}]},
+    {"id":"ti-file-upload","name":"File upload controls are available","url":"/upload","steps":[],"validations":[{"type":"element_present","selector":"#file-upload"},{"type":"element_present","selector":"#file-submit"}]}
+  ]
+}
