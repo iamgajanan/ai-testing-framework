@@ -10,6 +10,12 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
+# Load repository .env for local worker execution. Existing process environment
+# variables keep precedence, so CI and production injected configuration wins.
+load_dotenv(override=False)
+
 from ..cloud.contracts import ExecutionRequest, ExecutionStatus
 from ..cloud.runner import ExecutionRunnerError, IsolatedExecutionRunner
 from .db import SupabaseDataError, SupabaseServiceClient, SupabaseWorkerClient
