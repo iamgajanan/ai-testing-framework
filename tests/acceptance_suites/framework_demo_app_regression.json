@@ -1,0 +1,8 @@
+{
+  "test_suite": "AI Testing Framework Demo App Regression",
+  "tests": [
+    {"id":"demo-home","name":"Demo application loads","url":"/","steps":[],"validations":[{"type":"element_present","selector":"body"}]},
+    {"id":"demo-api","name":"API demo page loads","url":"/api-demo","steps":[],"validations":[{"type":"element_present","selector":"body"}]},
+    {"id":"demo-form","name":"Form page loads","url":"/forms","steps":[],"validations":[{"type":"element_present","selector":"body"}]}
+  ]
+}
