@@ -16,6 +16,7 @@ load_dotenv(override=False)
 from ..cloud.contracts import ExecutionSpec
 from .api_keys import create_project_api_key
 from .auth import AuthenticatedUser, get_current_user
+from ..ai.test_generator import TestGenerator as _TestGenerator
 from .db import SupabaseDataClient, SupabaseDataError, SupabaseServiceClient, get_data_client
 from .executions import ExecutionRecord
 from .principal import ExecutionPrincipal, get_execution_principal
@@ -135,6 +136,23 @@ def _artifact_select() -> str:
 
 def get_execution_db(principal: ExecutionPrincipal = Depends(get_execution_principal)) -> SupabaseDataClient | None:
     return SupabaseDataClient(principal.user) if principal.user else None
+
+
+
+class _GenerationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    project_id: UUID
+    organization_id: UUID
+    prompt: str = Field(min_length=10, max_length=4000)
+    base_url: str = Field(min_length=1)
+    browser: str = Field(default="chromium", pattern="^(chromium|firefox|webkit)$")
+
+
+class _GenerationResponse(BaseModel):
+    suite: dict[str, Any]
+    prompt: str
+    base_url: str
+    browser: str
 
 
 def create_app() -> FastAPI:
@@ -298,6 +316,55 @@ def create_app() -> FastAPI:
             return ExecutionResponse.model_validate(ExecutionRecord.from_row(rows[0]).to_response())
         except SupabaseDataError as exc:
             raise _data_error(exc) from exc
+
+
+    # ------------------------------------------------------------------
+    # Natural-language test generation
+    # ------------------------------------------------------------------
+
+    @app.post("/v1/generate", response_model=_GenerationResponse, status_code=200)
+    async def generate_suite(
+        payload: _GenerationRequest,
+        user: AuthenticatedUser = Depends(get_current_user),
+    ) -> _GenerationResponse:
+        """Generate a test suite JSON from a natural-language prompt."""
+        import os, json, tempfile, pathlib
+
+        provider = "openai" if os.environ.get("OPENAI_API_KEY") else "none"
+        generator = _TestGenerator(provider=provider)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = str(pathlib.Path(tmp) / "suite.json")
+            try:
+                generator.generate(
+                    url=payload.base_url,
+                    output_path=out_path,
+                    browser=payload.browser,
+                    base_url="",
+                    max_pages=1,
+                )
+                suite = json.loads(pathlib.Path(out_path).read_text())
+            except Exception as exc:
+                suite = {
+                    "test_suite": f"Generated: {payload.prompt[:80]}",
+                    "tests": [{
+                        "id": "GEN-001",
+                        "name": payload.prompt[:80],
+                        "url": "/",
+                        "steps": [],
+                        "validations": [{"type": "element_present", "selector": "body"}],
+                        "error_checks": ["console_errors"],
+                    }],
+                    "_generation_note": f"Page inspection failed: {exc}. Edit steps manually.",
+                }
+
+        suite["test_suite"] = f"Generated: {payload.prompt[:80]}"
+        return _GenerationResponse(
+            suite=suite,
+            prompt=payload.prompt,
+            base_url=payload.base_url,
+            browser=payload.browser,
+        )
 
     return app
 
