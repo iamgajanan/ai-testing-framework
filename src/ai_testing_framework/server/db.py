@@ -76,6 +76,20 @@ class SupabaseDataClient:
             response = await client.patch(f"{self._url}/{table}", headers=headers, params=filters, json=payload)
         return self._parse(response)
 
+    async def _delete(self, table: str, filters: dict[str, str]) -> None:
+        """Delete rows matching filters. Used internally for suite management."""
+        import urllib.request as _ur
+        url = f"{self._base_url}/rest/v1/{table}"
+        params = "&".join(f"{k}={v}" for k, v in filters.items())
+        full_url = f"{url}?{params}"
+        req = _ur.Request(full_url, method="DELETE", headers=self._headers)
+        try:
+            with _ur.urlopen(req) as r:
+                pass
+        except _ur.HTTPError as exc:
+            raise SupabaseDataError(f"DELETE {table} failed: {exc.reason}", exc.code) from exc
+
+
     async def rpc(self, function: str, payload: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post(f"{self._rpc_url}/{function}", headers=self._headers, json=payload or {})

@@ -206,3 +206,69 @@ async def get_test_suite_version(
         return TestSuiteVersionResponse.model_validate({**row, "signed_url": signed_url, "expires_in": expires_in})
     except SupabaseDataError as exc:
         raise _error(exc) from exc
+
+
+class RenameSuiteRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    name: str = Field(min_length=1, max_length=120)
+
+
+@router.patch("/{suite_id}", response_model=TestSuiteResponse)
+async def rename_test_suite(
+    project_id: UUID,
+    suite_id: UUID,
+    payload: RenameSuiteRequest,
+    db: SupabaseDataClient = Depends(get_data_client),
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> TestSuiteResponse:
+    """Rename a test suite. The slug is regenerated from the new name."""
+    new_name = payload.name.strip()
+    new_slug = _slug(new_name)
+    try:
+        rows = await db.update(
+            "test_suites",
+            {"id": f"eq.{suite_id}", "project_id": f"eq.{project_id}"},
+            {"name": new_name, "slug": new_slug, "updated_at": datetime.now(timezone.utc).isoformat()},
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail="Test suite not found")
+        suite = rows[0]
+        versions = await db.select(
+            "test_suite_versions",
+            select="version",
+            filters={"test_suite_id": f"eq.{suite_id}"},
+            order="version.desc",
+            limit=1,
+        )
+        return TestSuiteResponse.model_validate(
+            {**suite, "latest_version": int(versions[0]["version"]) if versions else None}
+        )
+    except SupabaseDataError as exc:
+        raise _error(exc) from exc
+
+
+@router.delete("/{suite_id}", status_code=204)
+async def delete_test_suite(
+    project_id: UUID,
+    suite_id: UUID,
+    db: SupabaseDataClient = Depends(get_data_client),
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> None:
+    """Delete a test suite and all its versions.
+
+    Storage objects are not deleted (immutable audit trail) but the
+    database records are removed so the suite no longer appears in listings.
+    """
+    try:
+        rows = await db.select(
+            "test_suites",
+            select="id",
+            filters={"id": f"eq.{suite_id}", "project_id": f"eq.{project_id}"},
+            limit=1,
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail="Test suite not found")
+        await db._delete("test_suite_versions", {"test_suite_id": f"eq.{suite_id}", "project_id": f"eq.{project_id}"})
+        await db._delete("test_suites", {"id": f"eq.{suite_id}", "project_id": f"eq.{project_id}"})
+    except SupabaseDataError as exc:
+        raise _error(exc) from exc
