@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { apiFetch } from '@/lib/api'
 import { StatusPoller } from './status-poller'
+import { ExecutionActions } from './execution-actions'
 
 function statusBadge(status: string) {
   const map: Record<string, { bg: string; color: string; label: string }> = {
@@ -100,6 +101,8 @@ export default async function ExecutionDetailPage({
       <section className="main">
         {/* Auto-refresh while queued/running */}
         <StatusPoller status={exec.status} />
+
+        <ExecutionActions executionId={executionId} status={exec.status} />
 
         <div className="topline page-header">
           <div>
