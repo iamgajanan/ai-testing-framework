@@ -318,6 +318,80 @@ def create_app() -> FastAPI:
             raise _data_error(exc) from exc
 
 
+
+    # ------------------------------------------------------------------
+    # Execution actions — cancel and retry
+    # ------------------------------------------------------------------
+
+    @app.post("/v1/executions/{execution_id}/cancel", status_code=200)
+    async def cancel_execution(
+        execution_id: UUID,
+        user: AuthenticatedUser = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        """Cancel a queued execution. Only queued (not yet claimed) executions
+        can be cancelled — running ones are owned by the worker process."""
+        try:
+            rows = await SupabaseServiceClient().update(
+                "executions",
+                {"id": f"eq.{execution_id}", "requested_by": f"eq.{user.id}", "status": "eq.queued"},
+                {"status": "cancelled", "finished_at": datetime.now(timezone.utc).isoformat()},
+            )
+            if not rows:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Execution cannot be cancelled — it may already be running or completed.",
+                )
+            return {"id": str(execution_id), "status": "cancelled"}
+        except HTTPException:
+            raise
+        except SupabaseDataError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.post("/v1/executions/{execution_id}/retry", status_code=201)
+    async def retry_execution(
+        execution_id: UUID,
+        user: AuthenticatedUser = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        """Re-queue a failed or cancelled execution with the same spec.
+        Returns the new execution row."""
+        try:
+            rows = await SupabaseServiceClient().select(
+                "executions",
+                select="*",
+                filters={"id": f"eq.{execution_id}"},
+                limit=1,
+            )
+            if not rows:
+                raise HTTPException(status_code=404, detail="Execution not found.")
+            orig = rows[0]
+            if orig["status"] not in ("failed", "cancelled"):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Only failed or cancelled executions can be retried (status: {orig['status']}).",
+                )
+            new_rows = await SupabaseServiceClient().insert("executions", {
+                "organization_id": orig["organization_id"],
+                "project_id":      orig["project_id"],
+                "requested_by":    str(user.id),
+                "status":          "queued",
+                "suite_path":      orig.get("suite_path") or "",
+                "base_url":        orig.get("base_url", ""),
+                "browser":         orig.get("browser", "chromium"),
+                "test_id":         orig.get("test_id"),
+                "output_dir":      orig.get("output_dir", "reports"),
+                "formats":         orig.get("formats", ["html", "json"]),
+                "workers":         orig.get("workers", 1),
+                "config":          orig.get("config"),
+                "ai_provider":     orig.get("ai_provider", "none"),
+            })
+            if not new_rows:
+                raise HTTPException(status_code=502, detail="Failed to create retry execution.")
+            return new_rows[0]
+        except HTTPException:
+            raise
+        except SupabaseDataError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     # ------------------------------------------------------------------
     # Natural-language test generation
     # ------------------------------------------------------------------
